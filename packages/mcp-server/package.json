@@ -1,0 +1,23 @@
+{
+  "name": "@qingshi/mcp-server",
+  "version": "0.24.0",
+  "type": "module",
+  "description": "青史标准 MCP server（stdio），可被 Codex / Claude Code / Trae / WorkBuddy 等客户端直接使用",
+  "bin": {
+    "qingshi-mcp": "bin/qingshi-mcp.mjs"
+  },
+  "exports": {
+    ".": "./mcp/server.mjs"
+  },
+  "files": [
+    "index.js",
+    "lib",
+    "shell",
+    "skills",
+    "mcp",
+    "bin"
+  ],
+  "engines": {
+    "node": ">=22.4"
+  }
+}

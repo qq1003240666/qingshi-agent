@@ -1,0 +1,16 @@
+{
+  "name": "@qingshi/core",
+  "version": "0.24.0",
+  "private": true,
+  "type": "module",
+  "description": "青史插件内核：工具定义、请求层、窗口与族谱能力",
+  "main": "index.js",
+  "exports": {
+    ".": "./index.js",
+    "./lib/*": "./lib/*.js",
+    "./manifest": "./lib/tool-manifest.js"
+  },
+  "engines": {
+    "node": ">=22.4"
+  }
+}

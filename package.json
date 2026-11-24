@@ -1,0 +1,22 @@
+{
+  "name": "qingshi-agent",
+  "version": "0.24.0",
+  "private": true,
+  "type": "module",
+  "description": "青史 AI 工具集：DSH 插件 + 标准 MCP server + 多客户端配置 CLI",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.4"
+  },
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "test": "node --test test/*.test.mjs",
+    "gen-docs": "node scripts/gen-docs.mjs",
+    "check-docs": "node scripts/check-docs.mjs",
+    "pack": "node scripts/pack.mjs",
+    "verify": "npm run build && npm test && npm run check-docs"
+  }
+}

@@ -1,0 +1,3 @@
+@echo off
+rem 源码仓库里的快捷方式：先 npm run build，再用 qingshi install --client ...
+node "%~dp0dist\cli\bin\qingshi.mjs" %*

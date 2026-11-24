@@ -1,0 +1,42 @@
+# 工具清单
+
+共 36 个工具。这份文件由 `npm run gen-docs` 生成，请勿手改。
+
+| 工具 | 标题 | 类型 |
+| --- | --- | --- |
+| `qingshi_login` | 登录青史 | 写入 |
+| `qingshi_save_login` | 保存登录凭证 | 写入 |
+| `qingshi_where` | 查看数据目录 | 只读 |
+| `qingshi_me` | 查看我的资料 | 只读 |
+| `qingshi_search` | 搜索用户 | 只读 |
+| `qingshi_find_experience` | 查找经历 | 只读 |
+| `qingshi_record` | 记录生涯事件 | 写入 |
+| `qingshi_tags` | 查看标签 | 只读 |
+| `qingshi_about_me` | 读取个人简介 | 只读 |
+| `qingshi_profile` | 修改个人资料 | 写入 |
+| `qingshi_set_privacy` | 设置事件隐私 | 写入 |
+| `qingshi_draft` | 生成待发布草稿 | 写入 |
+| `qingshi_publish` | 发布草稿 | 写入 |
+| `qingshi_open_h5` | 打开青史窗口 | 本地窗口 |
+| `qingshi_ui_read` | 读取窗口内容 | 只读 |
+| `qingshi_ui_goto` | 窗口内跳转 | 本地窗口 |
+| `qingshi_ui_click` | 窗口内点击 | 本地窗口 |
+| `qingshi_ui_type` | 窗口内输入 | 本地窗口 |
+| `qingshi_ui_tap` | 窗口内轻触 | 本地窗口 |
+| `qingshi_ui_shot` | 窗口截图 | 只读 |
+| `qingshi_pages` | 查看页面地图 | 只读 |
+| `qingshi_event` | 读取事件详情 | 只读 |
+| `qingshi_edit` | 修改事件 | 危险写 |
+| `qingshi_delete` | 删除事件 | 危险写 |
+| `qingshi_restore` | 恢复事件 | 写入 |
+| `qingshi_family` | 族谱分层导航 | 只读 |
+| `qingshi_kinship` | 计算亲属称谓 | 只读 |
+| `qingshi_open_event` | 打开事件页面 | 写入 |
+| `qingshi_prepare_event` | 准备事件页面 | 写入 |
+| `qingshi_family_expand` | 展开族谱节点 | 写入 |
+| `qingshi_family_layout` | 调整族谱布局 | 本地窗口 |
+| `qingshi_logout` | 退出登录 | 危险写 |
+| `qingshi_skill` | 读取操作技能 | 写入 |
+| `qingshi_family_add` | 添加族谱成员 | 写入 |
+| `qingshi_family_invite` | 生成族谱邀请码 | 写入 |
+| `qingshi_family_all` | 读取完整族谱 | 只读 |

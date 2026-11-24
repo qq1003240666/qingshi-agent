@@ -1,0 +1,3 @@
+#!/bin/sh
+# 源码仓库里的快捷方式：先 npm run build，再用 qingshi install --client ...
+exec node "$(dirname "$0")/dist/cli/bin/qingshi.mjs" "$@"

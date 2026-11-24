@@ -1,0 +1,31 @@
+{
+  "name": "@qingshi/dsh-adapter",
+  "version": "0.24.0",
+  "type": "module",
+  "description": "青史 × DeepSeek Harness 适配层（DSH 的 cordis.patch.yml、locale、安装器；内核在 packages/core）",
+  "exports": {
+    "./package.json": "./package.json",
+    "./locale/*": "./locale/*"
+  },
+  "bin": {
+    "qingshi-open": "bin/open.mjs"
+  },
+  "files": [
+    "bin",
+    "cordis.patch.yml",
+    "install.mjs",
+    "icon.svg",
+    "locale"
+  ],
+  "peerDependencies": {
+    "@deepseek-ai/dsh-tools": "*"
+  },
+  "peerDependenciesMeta": {
+    "@deepseek-ai/dsh-tools": {
+      "optional": true
+    }
+  },
+  "engines": {
+    "node": ">=22.4"
+  }
+}

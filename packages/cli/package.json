@@ -1,0 +1,16 @@
+{
+  "name": "@qingshi/cli",
+  "version": "0.24.0",
+  "type": "module",
+  "description": "青史 CLI：为 Claude Code / Codex / Trae / WorkBuddy 等客户端写入 MCP 配置",
+  "bin": {
+    "qingshi": "bin/qingshi.mjs"
+  },
+  "files": [
+    "bin",
+    "src"
+  ],
+  "engines": {
+    "node": ">=22.4"
+  }
+}

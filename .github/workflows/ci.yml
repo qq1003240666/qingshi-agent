@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-and-test:
+    name: Build + test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        node: ['22']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+
+      - name: Build
+        run: node scripts/build.mjs
+        shell: bash
+
+      - name: Smoke test (core 加载)
+        run: node test/smoke.mjs
+        shell: bash
+
+      - name: MCP 协议层测试
+        run: node test/mcp.mjs
+        shell: bash
+
+      - name: 路径测试
+        run: node test/paths.mjs
+        shell: bash
+
+      - name: 兼容性检查（15 项）
+        run: node test/agent-compat.mjs
+        shell: bash
+
+      - name: 静态审查
+        run: node test/_review.mjs
+        shell: bash
+
+      - name: 文档漂移检查
+        run: node scripts/check-docs.mjs
+        shell: bash
+
+      - name: CLI doctor (subprocess 真实握手)
+        run: node dist/cli/bin/qingshi.mjs doctor
+        shell: bash

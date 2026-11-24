@@ -1,0 +1,41 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-publish:
+    name: Build + pack + release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Build
+        run: node scripts/build.mjs
+        shell: bash
+
+      - name: 兼容性检查（发版前必须过）
+        run: node test/agent-compat.mjs
+        shell: bash
+
+      - name: Pack
+        run: node scripts/pack.mjs
+        shell: bash
+
+      - name: 上传 Release Asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/*.tar.gz
+            artifacts/*.tar.gz.sha256
+          generate_release_notes: true
+          body_path: CHANGELOG.md

@@ -1,0 +1,249 @@
+// 青史 MCP server —— 把插件的工具暴露成标准 MCP tools，
+// 让 Codex / Claude Code / Cursor / Cline / WorkBuddy 等任何 MCP 客户端都能用。
+//
+// 复用的就是 DSH 插件本身：这里造一个假的 ctx 接住 ctx.tools.register()，
+// 工具定义、登录、请求层、族谱自动化全是同一份代码，不存在第二套实现。
+import { createInterface } from 'node:readline'
+import { readFileSync } from 'node:fs'
+
+import * as plugin from '../index.js'
+import { setClientInfo } from '../lib/attribution.js'
+import { annotationsFor, titleFor } from '../lib/tool-manifest.js'
+
+// 协议版本：客户端在 initialize 里报一个，命中就原样回显，否则回最新支持的版本。
+// 2024-11-05 保留给还在用旧版 SDK 的客户端。
+const SUPPORTED_PROTOCOLS = ['2025-06-18', '2025-03-26', '2024-11-05']
+const LATEST_PROTOCOL = SUPPORTED_PROTOCOLS[0]
+const SERVER_NAME = 'qingshi'
+const SERVER_VERSION = (() => {
+  try {
+    const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+    return String(pkg.version || '0.0.0')
+  } catch {
+    return '0.0.0'
+  }
+})()
+
+function envConfig() {
+  const env = process.env
+  const number = (value) => (value === undefined || value === '' ? undefined : Number(value))
+  const bool = (value) => (value === undefined || value === '' ? undefined : /^(1|true|yes|on)$/i.test(value))
+  return {
+    apiBaseUrl: env.QINGSHI_API_BASE_URL || undefined,
+    webBaseUrl: env.QINGSHI_WEB_BASE_URL || undefined,
+    workspaceDir: env.QINGSHI_WORKSPACE || undefined,
+    allowFamilyWrite: bool(env.QINGSHI_ALLOW_FAMILY_WRITE),
+    autoRecord: env.QINGSHI_AUTO_RECORD || undefined,
+    autoOpenBrowser: bool(env.QINGSHI_AUTO_OPEN_BROWSER),
+    openLoginWindow: bool(env.QINGSHI_OPEN_LOGIN_WINDOW),
+    windowMode: env.QINGSHI_WINDOW_MODE || undefined,
+    requestPlatform: env.QINGSHI_REQUEST_PLATFORM || undefined,
+    loginTimeoutMs: number(env.QINGSHI_LOGIN_TIMEOUT_MS),
+  }
+}
+
+// 假宿主：收集工具定义与系统提示词文本
+export async function loadTools(config = envConfig()) {
+  const tools = new Map()
+  const sections = []
+  const entries = []
+  const ctx = {
+    tools: {
+      register(spec) {
+        entries.push(spec)
+        if (spec && spec.name) tools.set(spec.name, spec)
+        return spec
+      },
+      get(name) {
+        return tools.get(name)
+      },
+      restrict() {},
+      guard() {},
+      schemas() {
+        return []
+      },
+    },
+    systemPrompt: {
+      section(section) {
+        sections.push(section)
+      },
+    },
+    logger: {
+      debug() {},
+      info() {},
+      warn() {},
+      error() {},
+    },
+    on() {},
+    effect() {},
+  }
+  await plugin.apply(ctx, config)
+  const instructions = sections.map((s) => String(s?.text || '').trim()).filter(Boolean).join('\n\n')
+  return { tools, entries, instructions }
+}
+
+// 插件里写的 parameters 是 DSH 的「参数表」形态：
+//     { phone: { type: 'string', description: '...' }, force: { type: 'boolean' } }
+// 而 MCP 要的是标准 JSON Schema：
+//     { type: 'object', properties: { phone: { type: 'string' } }, required: [...] }
+// 在 DSH 里这一步是 @deepseek-ai/dsh-tools 帮你做的；走 MCP 时没有它，
+// 所以必须在这里自己转——否则客户端拿到的是没有 type 的对象，
+// 严格的客户端（例如 workbuddy）会直接报 `tools[0].inputSchema.type 期望 object`。
+const JSON_TYPES = new Set(['string', 'number', 'integer', 'boolean', 'null', 'array', 'object'])
+
+function dslPropertyToSchema(entry) {
+  if (!entry || typeof entry !== 'object' || Array.isArray(entry)) return {}
+  if (Array.isArray(entry.oneOf)) return { oneOf: entry.oneOf.map(dslPropertyToSchema) }
+
+  const type = String(entry.type || '').toLowerCase()
+  const out = {}
+  // json = 任意值（对象/数组都行），不写 type
+  if (JSON_TYPES.has(type)) out.type = type
+  if (entry.description) out.description = String(entry.description)
+  if (Array.isArray(entry.enum)) out.enum = entry.enum.slice()
+  if (entry.default !== undefined) out.default = entry.default
+
+  if (type === 'array') out.items = dslPropertyToSchema(entry.items || {})
+  if (type === 'object') {
+    const inner = toJsonSchema(entry.properties || {})
+    out.properties = inner.properties
+    if (inner.required) out.required = inner.required
+  }
+  return out
+}
+
+/** 参数表 / 已经是 JSON Schema 的，都统一成 MCP 认的 JSON Schema。 */
+export function toJsonSchema(parameters) {
+  if (!parameters || typeof parameters !== 'object' || Array.isArray(parameters)) {
+    return { type: 'object', properties: {} }
+  }
+  const declared = String(parameters.type || '').toLowerCase()
+  if (declared === 'object' && parameters.properties && typeof parameters.properties === 'object') {
+    const out = { type: 'object', properties: parameters.properties }
+    if (Array.isArray(parameters.required) && parameters.required.length) {
+      out.required = parameters.required.filter((name) => typeof name === 'string')
+    }
+    return out
+  }
+
+  const properties = {}
+  const required = []
+  for (const [name, entry] of Object.entries(parameters)) {
+    properties[name] = dslPropertyToSchema(entry)
+    if (entry && entry.required === true) required.push(name)
+  }
+  const schema = { type: 'object', properties }
+  if (required.length) schema.required = required
+  return schema
+}
+
+function toMcpTool(spec) {
+  const annotations = annotationsFor(spec.name)
+  return {
+    name: spec.name,
+    title: titleFor(spec.name),
+    description: String(spec.description || ''),
+    inputSchema: toJsonSchema(spec.parameters),
+    annotations: {
+      readOnlyHint: annotations.readOnlyHint,
+      destructiveHint: annotations.destructiveHint,
+      idempotentHint: annotations.idempotentHint,
+      openWorldHint: annotations.openWorldHint,
+    },
+  }
+}
+
+function negotiateProtocol(requested) {
+  if (SUPPORTED_PROTOCOLS.includes(requested)) return requested
+  if (requested) process.stderr.write(`qingshi-mcp: unsupported protocol ${requested}, using ${LATEST_PROTOCOL}\n`)
+  return LATEST_PROTOCOL
+}
+
+function ok(id, result) {
+  return { jsonrpc: '2.0', id, result }
+}
+
+function fail(id, code, message) {
+  return { jsonrpc: '2.0', id, error: { code, message } }
+}
+
+export function createServer({ tools, instructions }) {
+  async function handle(message) {
+    const { id, method, params } = message || {}
+    // 通知（没有 id）不需要回复
+    const isNotification = id === undefined || id === null
+
+    if (method === 'initialize') {
+      // 客户端在 initialize 里会报名字（claude-code / codex / workbuddy …），
+      // 写记录时用它给正文署名，用户就知道这条是哪个 AI 帮着录的。
+      const clientName = params?.clientInfo?.name
+      if (clientName) setClientInfo(clientName)
+      return ok(id, {
+        protocolVersion: negotiateProtocol(params?.protocolVersion),
+        capabilities: { tools: { listChanged: false } },
+        serverInfo: { name: SERVER_NAME, version: SERVER_VERSION },
+        instructions: instructions || undefined,
+      })
+    }
+    if (method === 'notifications/initialized' || method === 'initialized') return null
+    if (method === 'ping') return ok(id, {})
+    if (method === 'tools/list' || method === 'tools/list '.trim()) {
+      return ok(id, { tools: [...tools.values()].map(toMcpTool) })
+    }
+    if (method === 'tools/call') {
+      const name = params?.name
+      const args = params?.arguments || {}
+      if (!name) return fail(id, -32602, 'missing tool name')
+      const spec = tools.get(name)
+      if (!spec) return fail(id, -32602, `unknown tool: ${name}`)
+      try {
+        const value = await spec.execute(args, {})
+        return ok(id, { content: [{ type: 'text', text: String(value ?? '') }], isError: false })
+      } catch (error) {
+        const text = error?.message ? String(error.message) : String(error)
+        return ok(id, { content: [{ type: 'text', text: `工具执行失败：${text}` }], isError: true })
+      }
+    }
+    if (method === 'resources/list') return ok(id, { resources: [] })
+    if (method === 'prompts/list') return ok(id, { prompts: [] })
+    if (isNotification) return null
+    return fail(id, -32601, `method not found: ${method}`)
+  }
+
+  return { handle }
+}
+
+// 标准 MCP stdio 传输：一行一条 JSON-RPC 消息
+function serveStdio(server, { input = process.stdin, output = process.stdout } = {}) {
+  const rl = createInterface({ input, crlfDelay: Infinity })
+  rl.on('line', async (line) => {
+    const text = line.trim()
+    if (!text) return
+    let message
+    try {
+      message = JSON.parse(text)
+    } catch {
+      output.write(JSON.stringify(fail(null, -32700, 'parse error')) + '\n')
+      return
+    }
+    const reply = await server.handle(message)
+    if (reply) output.write(JSON.stringify(reply) + '\n')
+  })
+  return rl
+}
+
+const isMain = (() => {
+  try {
+    return import.meta.url === new URL(`file://${process.argv[1].replace(/\\/g, '/')}`).href
+  } catch {
+    return false
+  }
+})()
+
+if (isMain || process.argv[1]?.endsWith('qingshi-mcp.mjs') || process.argv[1]?.endsWith('server.mjs')) {
+  const { tools, instructions } = await loadTools()
+  serveStdio(createServer({ tools, instructions }))
+  process.stderr.write(`qingshi-mcp ready: ${tools.size} tools\n`)
+}
+
+export { serveStdio, envConfig }
