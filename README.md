@@ -1,6 +1,39 @@
 # 青史 Agent
 
-把「青史」的记录能力接到你常用的 AI 编程 / 聊天客户端里。支持 Codex、Claude Code、Trae、WorkBuddy、Cursor、Cline、Windsurf，一份工具同时用在所有客户端。
+> **给你的 AI 接入「青史永存」**。
+>
+> 把你在微信小程序「青史永存」里记录的人生经历、族谱、亲属关系，接到你常用的 AI 编程 / 聊天客户端里。问 AI "我是谁"，它会从青史里查你的资料；问"我去过哪些地方"，它会翻你的生涯记录；问"我妈妈是谁，她的经历"，它会算亲属关系、拉妈妈的生涯。不需要复制粘贴，不需要导出数据。
+
+- 覆盖 7 种 MCP 客户端：Codex / Claude Code / Trae / WorkBuddy / Cursor / Cline / Windsurf
+- 同时兼容 DeepSeek Harness（DSH）——一份内核，两种用法
+- **36 个工具**：登录、查资料、读/写生涯事件、族谱导航、亲属称谓计算、窗口自动化
+- 标准 stdio MCP 协议（支持 2025-06-18 / 2025-03-26 / 2024-11-05）
+
+### 它能做什么（对话示例）
+
+**身份与自我认知**
+> 你：我是谁？今年多大？
+> AI：先调用 `qingshi_me` 从青史里读你的资料——昵称、生日、签名、个性标签——算出你今年多大，结合简介组织一段自我介绍。
+
+**经历与回忆**
+> 你：我去过哪些地方？给我讲讲我的故事。
+> AI：调 `qingshi_find_experience` 拉全部生涯记录，按时间 / 地点 / 关键词过滤，把"所有去过的地方"和"值得一提的故事"整理成一段有温度的叙述。
+
+**族谱与血缘**
+> 你：我妈妈是谁？她这一生是怎么过来的？
+> AI：先调 `qingshi_family_all` 看清族谱结构，用 `qingshi_kinship` 找到妈妈的节点；再调 `qingshi_find_experience` 读她的生涯记录，最后用 `qingshi_about_me` 拿她的简介——综合成一段完整的"妈妈的故事"。
+
+**记新的一笔**
+> 你：我今天去了趟青龙峡，风景真好。帮我记一下。
+> AI：调 `qingshi_tags` 看标签清单，挑 `travel`（旅行）和 `scenery`（风景），整理好时间地点正文，调 `qingshi_record`——需要你确认（`confirm: true`）才真的写入云端。
+
+**AI 操作青史页面**
+> 你：打开族谱，看看我爷爷那支。
+> AI：先 `qingshi_open_h5` 弹出青史独立窗口，等页面加载完 `qingshi_family_all` 拿族谱，用 `qingshi_family_expand` 一层层展开找到爷爷的节点，再 `qingshi_ui_click` 点进去。整个过程窗口会一直留在桌面上。
+
+**身份安全提示**
+> 你：我想让 AI 帮我处理青史数据，安全吗？
+> AI：登录态存在本机 `~/qingshi-plugin/auth.json`（0600 权限），**永远不会出现在工具参数或对话里**。写操作有闸门（不传 `confirm: true` 只生成预览），危险工具（delete / logout）带 destructiveHint，客户端会弹确认。
 
 ---
 
