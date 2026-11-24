@@ -1,18 +1,14 @@
-// 生成 docs/TOOLS.md，并刷新 README 里的工具表。
-// 用法：npm run gen-docs
+// 生成 docs/TOOLS.md（给 AI agent 看的完整工具参数文档）。
+// README 里的「工具清单」部分是手写的、按功能分组的，不在这里生成。
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { renderPage, applyToReadme } from './doc-tools.mjs'
+import { renderPage } from './doc-tools.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 const toolsFile = path.join(root, 'docs', 'TOOLS.md')
-const readmeFile = path.join(root, 'README.md')
 
 fs.mkdirSync(path.dirname(toolsFile), { recursive: true })
 fs.writeFileSync(toolsFile, renderPage())
-
-const readme = fs.readFileSync(readmeFile, 'utf8')
-fs.writeFileSync(readmeFile, applyToReadme(readme))
-process.stdout.write('gen-docs ok: docs/TOOLS.md + README\n')
+process.stdout.write('gen-docs ok: docs/TOOLS.md\n')

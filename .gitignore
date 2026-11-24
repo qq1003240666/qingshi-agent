@@ -14,3 +14,6 @@ electron-profile/
 .npm-cache/
 .pack/
 .tmp/
+
+# 运行时数据（测试时 spawn MCP server 产生）
+.qingshi-plugin/

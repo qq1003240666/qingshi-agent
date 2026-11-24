@@ -46,7 +46,9 @@ if (!existsSync(join(root, 'docs', 'TOOLS.md'))) issues.push({ label: '缺 docs/
 else check('docs/TOOLS.md 与 manifest 一致', readFileSync(join(root, 'docs', 'TOOLS.md'), 'utf8') === docTools.renderPage())
 
 const readme = readFileSync(join(root, 'README.md'), 'utf8')
-try { docTools.applyToReadme(readme) } catch (e) { issues.push({ label: 'README 缺 TOOLS:START/TOOLS:END 标记', detail: e.message }) }
+check('README.md 存在且有内容', readme.length > 2000, `只有 ${readme.length} 字符，可能是空壳`)
+check('README 提到 Node 22+', /Node\.js.*22|node.*22/i.test(readme))
+check('README 提到 qingshi-cli 用法', /qingshi.*install|qingshi.*doctor/i.test(readme))
 
 const cfg = await import(pathToFileURL(join(root, 'packages', 'cli', 'src', 'config.mjs')).href)
 for (const id of cfg.clientIds()) {

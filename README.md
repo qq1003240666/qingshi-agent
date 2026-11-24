@@ -1,165 +1,247 @@
 # 青史 Agent
 
-把「青史」的记录能力接到主流 AI 编程 / 聊天客户端里。核心思路：**一份内核 + 三种适配**。
+把「青史」的记录能力接到你常用的 AI 编程 / 聊天客户端里。支持 Codex、Claude Code、Trae、WorkBuddy、Cursor、Cline、Windsurf，一份工具同时用在所有客户端。
 
-```
-           ┌─────────────────┐
-           │   packages/core │  ← 唯一的工具定义、登录、请求层、族谱自动化
-           └────────┬────────┘
-                    │ 被三个适配层消费
-        ┌───────────┼───────────┐
-        ▼           ▼           ▼
-  dsh-adapter  mcp-server     cli
-  DSH 宿主壳    标准 stdio     一键配置
-  cordis patch MCP            写各家配置
-  locale / 安装器
-```
+---
 
-- **dsh-adapter**：给 DeepSeek Harness 用，提供 `cordis.patch.yml`、locale、安装器。内核直接 import core，没有独立实现。
-- **mcp-server**：标准 stdio MCP。Claude Code、Codex、Cursor、Cline、Windsurf、WorkBuddy、Trae **全部走这一条**——不需要给每家做一份 plugin 目录。
-- **cli**：一条命令把 mcp-server 写进各家客户端的配置文件（JSON / TOML）。
+## 快速上手（三分钟）
 
-## 快速开始
+### 1. 确认环境
 
-### 从 Release 安装（推荐）
-
-1. 下载 `qingshi-<version>.tar.gz` 并解压。
-2. 确认 Node >= 22.4。
-3. 写配置：
+需要 **Node.js >= 22.4**。
 
 ```bash
+node -v   # 应该是 v22.4 或更新
+```
+
+没有？Windows 跑 `winget install OpenJS.NodeJS.LTS`，macOS 跑 `brew install node@22`，或去 [nodejs.org](https://nodejs.org/) 下载 LTS。
+
+### 2. 下载并解压
+
+从 [Releases](https://github.com/qq1003240666/qingshi-agent/releases) 下载 `qingshi-<version>.tar.gz`，解压到任意目录。
+
+### 3. 一键配置你的 AI 客户端
+
+```bash
+# Trae
 node dist/cli/bin/qingshi.mjs install --client trae
-node dist/cli/bin/qingshi.mjs doctor
+
+# Codex CLI
+node dist/cli/bin/qingshi.mjs install --client codex
+
+# Claude Code
+node dist/cli/bin/qingshi.mjs install --client claude-code
+
+# 想装哪个就装哪个，支持同时装多个
 ```
 
 Windows 解压后也可以直接用 `qingshi.cmd install --client trae`。
 
-### 从源码
+### 4. 验证
 
 ```bash
-npm run build
-node dist/cli/bin/qingshi.mjs install --client claude-code --scope project
+node dist/cli/bin/qingshi.mjs doctor
 ```
 
-构建是零依赖的「拷贝即产物」：把 `packages/core` 摊平复制到 `dist/dsh-plugin`、`dist/mcp-server`、`dist/cli`，不打包、不转译。
+应该看到类似：
+
+```
+Node 22.x.x  OK
+MCP server  <你的解压目录>/dist/mcp-server/bin/qingshi-mcp.mjs
+协议  2025-06-18  server qingshi@0.24.0
+工具  36 个
+instructions 已注入
+
+自检通过
+```
+
+然后打开 AI 客户端，说一句「打开青史」——会弹出登录窗口。登录一次，以后所有客户端共用同一份数据。
+
+---
 
 ## 支持的客户端
 
-| 客户端 | 命令 | 配置文件 |
-| --- | --- | --- |
-| Claude Code | `qingshi install --client claude-code` | 项目 `.mcp.json`，用户级用 `claude mcp add` |
-| Codex CLI | `qingshi install --client codex` | `~/.codex/config.toml` |
-| Trae | `qingshi install --client trae` | `%APPDATA%\Trae CN\User\mcp.json` |
-| WorkBuddy | `qingshi print --client workbuddy` | 界面里添加 stdio 服务，或用 `--config` |
-| Cursor | `qingshi install --client cursor` | `.cursor/mcp.json` |
-| Cline | `qingshi install --client cline` | VS Code globalStorage |
-| Windsurf | `qingshi install --client windsurf` | `~/.codeium/windsurf/mcp_config.json` |
+| 客户端 | 一键配置 | 手动配置路径 | 逐家说明 |
+| --- | --- | --- | --- |
+| **Trae / Trae CN** | `qingshi install --client trae` | `%APPDATA%\Trae CN\User\mcp.json` | [docs/clients/trae.md](docs/clients/trae.md) |
+| **Codex CLI** | `qingshi install --client codex` | `~/.codex/config.toml` | [docs/clients/codex.md](docs/clients/codex.md) |
+| **Claude Code** | `qingshi install --client claude-code` | `.mcp.json`（`claude mcp add` 也行） | [docs/clients/claude-code.md](docs/clients/claude-code.md) |
+| **WorkBuddy** | `qingshi print --client workbuddy` | 界面里「连接器 / MCP」粘贴片段 | [docs/clients/workbuddy.md](docs/clients/workbuddy.md) |
+| **Cursor** | `qingshi install --client cursor` | `.cursor/mcp.json` | [docs/clients/cursor.md](docs/clients/cursor.md) |
+| **Cline** | `qingshi install --client cline` | VS Code globalStorage | [docs/clients/cline.md](docs/clients/cline.md) |
+| **Windsurf** | `qingshi install --client windsurf` | `~/.codeium/windsurf/mcp_config.json` | [docs/clients/windsurf.md](docs/clients/windsurf.md) |
 
-逐家说明见 [docs/clients](docs/clients)。
+DSH（DeepSeek Harness）用户：下载 `dsh-plugin/` 目录或整套 release，然后运行 `node dsh-plugin/install.mjs`，或手动跑 `bin/install-to-harness.cmd`。
 
-## CLI
+---
+
+## CLI 命令
 
 ```text
-qingshi install    写入客户端配置（--dry-run 只看不写，--force 覆盖已有条目）
-qingshi uninstall  移除配置（会先备份）
-qingshi print      只打印片段，适合粘贴到图形界面
-qingshi doctor     检查 Node / server 路径 / 配置，并真实握手、列出工具数
-qingshi where      打印青史数据目录
-qingshi clients    列出支持的客户端
+qingshi install       写入客户端配置（--dry-run 只看不写，--force 覆盖已有条目）
+qingshi uninstall     移除配置（会先备份）
+qingshi print         只打印配置片段，适合粘贴到图形界面
+qingshi doctor        检查 Node / server 路径 / 配置，并真实握手、列出工具数
+qingshi where         打印青史数据目录
+qingshi clients       列出支持的客户端
 ```
 
 通用选项：`--client <id>`、`--scope user|project`、`--config <file>`、`--dry-run`、`--force`、`--json`。
 
-写文件前会把原文件备份成 `<file>.bak-<时间戳>`；配置已经一致时不会重复写。
+配置写入前会把原文件备份成 `<file>.bak-<时间戳>`；如果现有配置和要写的完全一致，不会重复写。
 
-## 工具清单
+---
 
-<!-- TOOLS:START -->
-| 工具 | 标题 | 类型 |
-| --- | --- | --- |
-| `qingshi_login` | 登录青史 | 写入 |
-| `qingshi_save_login` | 保存登录凭证 | 写入 |
-| `qingshi_where` | 查看数据目录 | 只读 |
-| `qingshi_me` | 查看我的资料 | 只读 |
-| `qingshi_search` | 搜索用户 | 只读 |
-| `qingshi_find_experience` | 查找经历 | 只读 |
-| `qingshi_record` | 记录生涯事件 | 写入 |
-| `qingshi_tags` | 查看标签 | 只读 |
-| `qingshi_about_me` | 读取个人简介 | 只读 |
-| `qingshi_profile` | 修改个人资料 | 写入 |
-| `qingshi_set_privacy` | 设置事件隐私 | 写入 |
-| `qingshi_draft` | 生成待发布草稿 | 写入 |
-| `qingshi_publish` | 发布草稿 | 写入 |
-| `qingshi_open_h5` | 打开青史窗口 | 本地窗口 |
-| `qingshi_ui_read` | 读取窗口内容 | 只读 |
-| `qingshi_ui_goto` | 窗口内跳转 | 本地窗口 |
-| `qingshi_ui_click` | 窗口内点击 | 本地窗口 |
-| `qingshi_ui_type` | 窗口内输入 | 本地窗口 |
-| `qingshi_ui_tap` | 窗口内轻触 | 本地窗口 |
-| `qingshi_ui_shot` | 窗口截图 | 只读 |
-| `qingshi_pages` | 查看页面地图 | 只读 |
-| `qingshi_event` | 读取事件详情 | 只读 |
-| `qingshi_edit` | 修改事件 | 危险写 |
-| `qingshi_delete` | 删除事件 | 危险写 |
-| `qingshi_restore` | 恢复事件 | 写入 |
-| `qingshi_family` | 族谱分层导航 | 只读 |
-| `qingshi_kinship` | 计算亲属称谓 | 只读 |
-| `qingshi_open_event` | 打开事件页面 | 写入 |
-| `qingshi_prepare_event` | 准备事件页面 | 写入 |
-| `qingshi_family_expand` | 展开族谱节点 | 写入 |
-| `qingshi_family_layout` | 调整族谱布局 | 本地窗口 |
-| `qingshi_logout` | 退出登录 | 危险写 |
-| `qingshi_skill` | 读取操作技能 | 写入 |
-| `qingshi_family_add` | 添加族谱成员 | 写入 |
-| `qingshi_family_invite` | 生成族谱邀请码 | 写入 |
-| `qingshi_family_all` | 读取完整族谱 | 只读 |
-<!-- TOOLS:END -->
+## 工具清单（36 个）
 
-完整的说明见 [docs/TOOLS.md](docs/TOOLS.md)。
+### 登录 / 身份
+
+| 工具 | 说明 |
+| --- | --- |
+| `qingshi_login` | 登录青史。会弹出短信验证码页面，AI 帮你填手机号和验证码 |
+| `qingshi_save_login` | 把凭证存到本机（内部用） |
+| `qingshi_logout` | 退出登录（会让所有客户端一起失效） |
+| `qingshi_where` | 数据目录在哪、里面有什么 |
+
+### 查资料（全部只读）
+
+| 工具 | 说明 |
+| --- | --- |
+| `qingshi_me` | 我的资料（头像、生日、签名、标签） |
+| `qingshi_profile` | 修改资料（生日 / 签名 / 标签等） |
+| `qingshi_search` | 搜索用户（名字 / uid / 手机号片段） |
+| `qingshi_find_experience` | 查生涯记录（关键词、标签、时间范围） |
+| `qingshi_tags` | 所有标签的使用频次 |
+| `qingshi_about_me` | 一段个人简介（让 AI 自我介绍时用） |
+| `qingshi_pages` | 青史 H5 所有页面的路由地图 |
+| `qingshi_event` | 读某条事件的完整详情 |
+
+### 记录与发布
+
+| 工具 | 说明 |
+| --- | --- |
+| `qingshi_record` | 记一条生涯事件（标题、正文、标签、时间、地点、图片）。**不传 `confirm: true` 时只生成预览，不真的写入云端** |
+| `qingshi_edit` | 修改已有事件 |
+| `qingshi_delete` | 删除事件（带破坏性标记，AI 客户端会弹确认） |
+| `qingshi_restore` | 从回收站恢复事件 |
+| `qingshi_set_privacy` | 设置事件隐私（公开 / 亲友可见 / 仅自己） |
+| `qingshi_draft` | 把待发布内容打包成草稿 |
+| `qingshi_publish` | 发布草稿 |
+
+### 族谱
+
+| 工具 | 说明 |
+| --- | --- |
+| `qingshi_family` | 族谱分层导航（只看一层，返回子节点列表） |
+| `qingshi_family_all` | 拉完整族谱（适合第一次打开时看全貌） |
+| `qingshi_family_add` | 添加一个新成员 |
+| `qingshi_family_invite` | 生成邀请二维码 |
+| `qingshi_kinship` | 算两个节点之间的亲属称谓（表哥 / 姨奶 等） |
+| `qingshi_open_event` | 打开某条事件的 H5 页面 |
+| `qingshi_prepare_event` | 为创建 / 编辑事件准备好页面状态 |
+| `qingshi_family_expand` | 展开某个节点查看下一层 |
+| `qingshi_family_layout` | 调整族谱里某个节点的位置 |
+
+### 窗口自动化（需要弹出青史 H5 窗口）
+
+| 工具 | 说明 |
+| --- | --- |
+| `qingshi_open_h5` | 弹出一个 Chrome / Edge 应用窗口（无地址栏、无标签页） |
+| `qingshi_ui_read` | 读取当前页面：标题、文本、按钮、输入框 |
+| `qingshi_ui_goto` | 窗口内跳转 |
+| `qingshi_ui_click` | 按文字或选择器点击 |
+| `qingshi_ui_type` | 往输入框填值 |
+| `qingshi_ui_tap` | 在画布坐标上点一下（族谱无限画布专用） |
+| `qingshi_ui_shot` | 窗口截图 |
+| `qingshi_skill` | 返回"AI 操作青史技能"的完整文本（首次加载会看到） |
+
+完整说明和参数见 [docs/TOOLS.md](docs/TOOLS.md)。
+
+---
+
+## 数据放在哪
+
+| 系统 | 路径 |
+| --- | --- |
+| Windows | `C:\Users\<你>\qingshi-plugin\` |
+| macOS | `/Users/<你>/qingshi-plugin/` |
+| Linux | `~/qingshi-plugin/` |
+
+里面：
+
+```
+auth.json              登录凭证（只本机可读）
+drafts.json            待发布草稿
+users.json             搜过的用户缓存
+browser-profile/       浏览器登录态（Chrome 用户数据目录）
+browser-window.json    上次开的窗口位置和尺寸
+media/                 事件配图（上传过的）
+```
+
+所有客户端共用同一份数据——在 Trae 里登录，Codex 打开时已经是登录状态，反之亦然。
+
+### 想换位置？
+
+设环境变量 `QINGSHI_HOME=/你/想/放/的/位置`，下次启动生效。
+
+### 升级会不会丢数据？
+
+不会。老版本在 `%APPDATA%\qingshi`、`~/Library/Application Support/qingshi`、`~/.config/qingshi`、`~/.dsh/qingshi-workspace` 里的数据，首次启动新版本时会**自动搬过去**（只补缺，不覆盖）。
+
+---
+
+## 给 AI Agent 的使用要点
+
+MCP server 的 `initialize` 会注入一段 system instructions，让模型知道怎么正确调用工具。下面是摘要，你可以作为 AI 自定义指令使用：
+
+> **最优先：用户说「打开青史」→ 先调 `qingshi_open_h5` 开窗，不要先解释、不要反问。**
+>
+> 「我是谁」「我多大」「我去过哪里」「给我讲讲我的故事」这类没提青史的话，也要调工具：先 `qingshi_me` 拿身份，再按需 `qingshi_find_experience` / `qingshi_family`。**不要回"我不知道你的信息"**——东西都在里面。
+>
+> 写记录时：先按标签挑好（`qingshi_tags` 可查），再把时间、地点、正文整理好，调 `qingshi_record`。传 `confirm: true` 才真的写进云端。
+>
+> 操作族谱前先 `qingshi_family_all` 看清结构，再按需求选 `qingshi_family_expand` / `qingshi_kinship` / `qingshi_family_add`。
+>
+> 所有写操作工具（record / edit / delete / logout / family_add / family_invite）在 MCP 层带了 `destructiveHint` 或非只读标记，客户端会自动弹确认。
+
+---
 
 ## 环境变量
 
 | 变量 | 作用 |
 | --- | --- |
-| `QINGSHI_API_BASE_URL` | 后端地址，默认 `https://api.iyouwc.cn` |
-| `QINGSHI_WEB_BASE_URL` | H5 站点，默认 `https://qingshi.iyouwc.cn` |
-| `QINGSHI_HOME` | 数据目录（token、草稿、截图） |
-| `QINGSHI_CLIENT_NAME` | 写记录时的署名，例如 `claude-code` |
-| `QINGSHI_ALLOW_FAMILY_WRITE` | `1` 允许族谱写入 |
-| `QINGSHI_LOGIN_TIMEOUT_MS` | 登录等待时长 |
+| `QINGSHI_HOME` | 强制指定数据目录 |
+| `QINGSHI_CLIENT_NAME` | 写记录时的署名，会自动拼到正文末尾（例如 `trae` / `codex`） |
+| `QINGSHI_BROWSER` | 指定 Chrome / Edge 可执行文件路径（自动查找失败时用） |
+| `QINGSHI_BROWSER=none` | 测试 / 无界面环境里彻底关掉浏览器 |
+| `QINGSHI_API_BASE_URL` | 后端地址（默认 `https://api.iyouwc.cn`） |
+| `QINGSHI_WEB_BASE_URL` | H5 站点（默认 `https://qingshi.iyouwc.cn`） |
 
-数据默认落在用户目录下的 `qingshi-plugin`（Windows：`C:\Users\<你>\qingshi-plugin`，macOS：`~/qingshi-plugin`，Linux：`~/qingshi-plugin`）。登录凭证只存在本机 `auth.json`（权限 0600），不会出现在工具参数或输出里。
+---
 
-## 开发
+## 安全要点
+
+- **Token 不经过对话**：`auth.json` 只存在本机（权限 0600），永远不会出现在工具参数或输出里。
+- **写操作有闸门**：`qingshi_record`、`qingshi_edit` 等不传 `confirm: true` 只给预览，不真的写云端。
+- **危险工具显式标记**：`qingshi_delete`、`qingshi_logout` 等带 `destructiveHint: true`，支持的客户端会自动弹确认框。
+- **窗口只连青史域**：H5 自动化只操作 `qingshi.iyouwc.cn` 页面，不会跳去任意 URL。
+
+详细见 [SECURITY.md](SECURITY.md)。
+
+---
+
+## 开发与贡献
 
 ```bash
-npm run build       # 生成 dist/
-npm test            # node:test，跑 dist 产物
-npm run gen-docs    # 刷新 docs/TOOLS.md 与 README 工具表
-npm run check-docs  # CI 用：文档与源码不一致就失败
-npm run pack        # artifacts/qingshi-<version>.tar.gz + sha256
+npm run build        # 生成 dist/（零依赖，直接拷贝）
+node test/_review.mjs  # 静态审查（manifest 覆盖 / 文档漂移 / 安全）
+node test/agent-compat.mjs  # MCP 协议兼容性（15 项）
+npm run gen-docs     # 刷新 docs/TOOLS.md 与 README 工具表
+npm run check-docs   # CI 用：文档与源码不一致就失败
+npm run pack         # 生成 artifacts/qingshi-<version>.tar.gz + sha256
 ```
 
-目录：
-
-```text
-packages/core         内核：36 个工具定义、登录、请求层、族谱自动化、窗口壳
-packages/dsh-adapter  DSH 宿主适配壳：cordis.patch.yml / locale / 安装器（内核 = core）
-packages/mcp-server   标准 stdio MCP 适配层（codex / claude-code / trae / workbuddy …全走它）
-packages/cli          多客户端配置 CLI：一键写各家配置文件
-scripts               构建、文档、打包
-test                  node:test 测试
-```
-
-## 为什么没有 codex-adapter / claude-code-adapter？
-
-因为 Codex、Claude Code、Trae、WorkBuddy、Cursor、Cline、Windsurf **全部支持 MCP**，只要有一份 stdio server + 一份配置文件即可。CLI 已经覆盖了 7 种客户端的配置写入路径和格式，新增客户端只需在 CLI 的 `CLIENTS` 表里加一行路径映射。
-
-DSH 之所以需要单独的 adapter，是因为它有自己的插件加载机制（cordis.patch.yml + Harness profile 安装器），不是 MCP 驱动的。
-
-## 安全
-
-见 [SECURITY.md](SECURITY.md)。要点：token 不经过对话、不落日志；写操作默认要用户确认；`qingshi_delete` 等危险工具在 MCP 层带 `destructiveHint`。
+完整开发指南见 [CONTRIBUTING.md](CONTRIBUTING.md)。
 
 ## License
 

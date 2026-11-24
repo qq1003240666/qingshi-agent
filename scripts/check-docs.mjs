@@ -1,10 +1,10 @@
-// 文档漂移检查：README 工具表 / docs/TOOLS.md / 客户端文档必须与源码一致。
-// 用法：npm run check-docs（CI 里在 build 之后跑）
+// 文档漂移检查：docs/TOOLS.md / 客户端文档必须与源码一致。
+// README 里的工具清单是手写的、按功能分组的，不在这里校验（也不被 gen-docs 覆盖）。
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { renderPage, applyToReadme } from './doc-tools.mjs'
+import { renderPage } from './doc-tools.mjs'
 import { clientIds } from '../packages/cli/src/config.mjs'
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
@@ -20,16 +20,7 @@ if (toolsText === null) problems.push('缺少 docs/TOOLS.md，运行 npm run gen
 else if (toolsText !== renderPage()) problems.push('docs/TOOLS.md 与源码不一致，运行 npm run gen-docs')
 
 const readmeFile = path.join(root, 'README.md')
-const readme = read(readmeFile)
-if (readme === null) {
-  problems.push('缺少 README.md')
-} else {
-  try {
-    if (applyToReadme(readme) !== readme) problems.push('README.md 的工具表已过期，运行 npm run gen-docs')
-  } catch (error) {
-    problems.push(error.message)
-  }
-}
+if (!fs.existsSync(readmeFile)) problems.push('缺少 README.md')
 
 for (const id of clientIds()) {
   const file = path.join(root, 'docs', 'clients', `${id}.md`)
