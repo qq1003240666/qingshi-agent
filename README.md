@@ -1,4 +1,4 @@
-# 青史 Agent
+﻿# 青史 Agent
 
 > **给你的 AI 接入「青史永存」——一部留给未来的电子史书。**
 >
@@ -6,7 +6,7 @@
 >
 > 装这个插件，问 AI "我是谁"，它会从青史里查你的资料；问"我去过哪些地方"，它会翻你的生涯记录；问"我妈妈是谁，她的经历"，它会算亲属关系、拉妈妈的生涯。不需要复制粘贴，不需要导出数据。
 
-![核心场景：AI 连接青史永存](docs/images/hero.png)
+![核心场景：AI 连接青史永存](docs/images/hero.jpg)
 
 - 覆盖 7 种 MCP 客户端：Codex / Claude Code / Trae / WorkBuddy / Cursor / Cline / Windsurf
 - 同时兼容 DeepSeek Harness（DSH）——一份内核，两种用法

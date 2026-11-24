@@ -1,4 +1,4 @@
-# 青史 Agent · 插件作用说明
+﻿# 青史 Agent · 插件作用说明
 
 > 本文档面向**终端用户**和**AI Agent**（MCP server 的 system instructions 也会参考这里的说法）。
 > 完整安装指南见 [README.md](../README.md)，36 个工具的参数明细见 [docs/TOOLS.md](TOOLS.md)。
@@ -16,7 +16,7 @@
 
 你在青史永存里记的每一条经历、拍的每一张照片、建的每一个家族节点——AI 现在能直接读、能帮你分析、能替你记新的一笔。不需要复制粘贴，不需要导出 Excel。
 
-![核心场景](images/hero.png)
+![核心场景](images/hero.jpg)
 
 ---
 
@@ -88,7 +88,7 @@ AI：妈妈本名李秀英，1972 年生，今年 53 岁。
     …
 ```
 
-![族谱示例](images/family.png)
+![族谱示例](images/family.jpg)
 
 ### ✍️ 记新的一笔
 
@@ -146,7 +146,7 @@ AI：妈妈本名李秀英，1972 年生，今年 53 岁。
 
 多客户端同时使用时，**全部读写同一份青史数据**（登录态、草稿、族谱节点都共享）。
 
-![多客户端](images/clients.png)
+![多客户端](images/clients.jpg)
 
 ---
 
@@ -168,7 +168,7 @@ MCP server 在 `initialize` 阶段会自动注入以下系统指令，让模型�
 
 ## 安全设计
 
-![安全](images/security.png)
+![安全](images/security.jpg)
 
 | 设计 | 说明 |
 |---|---|
