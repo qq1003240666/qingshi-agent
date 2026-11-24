@@ -5,6 +5,28 @@
   "type": "module",
   "description": "青史 AI 工具集：DSH 插件 + 标准 MCP server + 多客户端配置 CLI",
   "license": "MIT",
+  "keywords": [
+    "qingshi",
+    "青史",
+    "ai-tools",
+    "mcp-server",
+    "mcp",
+    "model-context-protocol",
+    "deepseek-harness",
+    "dsh-plugin",
+    "codex",
+    "claude-code",
+    "trae",
+    "cursor",
+    "cline",
+    "windsurf",
+    "workbuddy",
+    "life-diary",
+    "family-tree",
+    "genealogy",
+    "career-timeline",
+    "record"
+  ],
   "engines": {
     "node": ">=22.4"
   },
