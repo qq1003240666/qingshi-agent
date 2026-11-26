@@ -18,7 +18,7 @@ import { basename } from 'node:path'
 import { isHeicFile, convertHeicToJpeg, jpegNameFor } from './heic.js'
 
 // 与后端 config.py 的默认白名单保持一致（部署时可能被环境变量改，这里只做前置友好校验）
-const IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif'])
+const IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif', 'heic', 'heif'])
 const VIDEO_EXTENSIONS = new Set(['mp4', 'mov', 'm4v', 'webm'])
 const FILE_EXTENSIONS = new Set(['pdf', 'doc', 'docx', 'xls', 'xlsx', 'txt', 'zip', 'rar', '7z', 'gz', 'tar'])
 const AUDIO_EXTENSIONS = new Set(['mp3', 'wav', 'm4a', 'aac', 'amr', 'ogg'])
@@ -161,15 +161,15 @@ export function createUploader({ logger } = {}) {
       heicStrategies,
     } = options
 
-    // HEIC：先转成 JPG 再走标准三步。
-    // 后端白名单不含 heic（小程序/浏览器也显示不了），转完就是普通 jpg，
-    // 后面的签名、直传、确认入库与小程序 / H5 完全一样。
+    // HEIC：始终先转成 JPG 再走标准三步。
+    // 后端现在已经允许 heic，但微信小程序和浏览器显示不了 HEIC，
+    // 所以插件这边仍然默认转成 jpg，让三端看到的都是普通图片。
     let cleanup = null
     let preparedPath = filePath
     let preparedName = fileName
     let preparedType = contentType
     let convertedFrom = ''
-    if (!allowedExtensions(bizType).has('heic') && (await isHeicFile(filePath))) {
+    if (await isHeicFile(filePath)) {
       const converted = await convertHeicToJpeg(
         filePath,
         heicStrategies ? { strategies: heicStrategies } : undefined,
