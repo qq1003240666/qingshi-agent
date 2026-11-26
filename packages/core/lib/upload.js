@@ -15,6 +15,7 @@
 //   - 返回的 upload_file_id / url 优先取 confirm 的结果
 import { readFile, stat } from 'node:fs/promises'
 import { basename } from 'node:path'
+import { isHeicFile, convertHeicToJpeg, jpegNameFor } from './heic.js'
 
 // 与后端 config.py 的默认白名单保持一致（部署时可能被环境变量改，这里只做前置友好校验）
 const IMAGE_EXTENSIONS = new Set(['jpg', 'jpeg', 'png', 'webp', 'gif'])
@@ -157,69 +158,100 @@ export function createUploader({ logger } = {}) {
       bizType = 'career_media',
       targetType = 'user_profile',
       customObjectKey = '',
+      heicStrategies,
     } = options
 
-    const file = await normalizeUploadFile(filePath, { contentType, fileName, bizType })
-
-    // 1. 申请签名（字段与前端 uploadFilesWithOss 完全一致）
-    const sign = await authed('/get_oss_upload_signature', {
-      biz_type: bizType,
-      of_uid: uid,
-      target_type: targetType,
-      custom_object_key: customObjectKey,
-      file_name: file.fileName,
-      file_size: file.fileSize,
-      content_type: file.contentType,
-    })
-    if (!sign || sign.code !== 200) {
-      throw new Error(`申请上传签名失败：${sign?.code ?? '未知'} ${sign?.message || ''}`.trim())
+    // HEIC：先转成 JPG 再走标准三步。
+    // 后端白名单不含 heic（小程序/浏览器也显示不了），转完就是普通 jpg，
+    // 后面的签名、直传、确认入库与小程序 / H5 完全一样。
+    let cleanup = null
+    let preparedPath = filePath
+    let preparedName = fileName
+    let preparedType = contentType
+    let convertedFrom = ''
+    if (!allowedExtensions(bizType).has('heic') && (await isHeicFile(filePath))) {
+      const converted = await convertHeicToJpeg(
+        filePath,
+        heicStrategies ? { strategies: heicStrategies } : undefined,
+      )
+      cleanup = converted.cleanup
+      preparedPath = converted.path
+      preparedName = jpegNameFor(fileName || filePath)
+      preparedType = 'image/jpeg'
+      convertedFrom = filePath
+      logger?.(`HEIC 已转 JPG（${converted.strategy}）：${filePath}`)
     }
 
-    const data = sign.data || {}
-    const host = String(data.host || '').replace(/\/+$/, '')
-    const objectKey = String(data.object_key || '')
-    const uploadFileId = String(data.upload_file_id || '')
-    if (!host) throw new Error('上传签名里没有 host')
-    if (!objectKey || !uploadFileId) throw new Error('上传签名缺少 object_key / upload_file_id')
+    try {
+      const file = await normalizeUploadFile(preparedPath, {
+        contentType: preparedType,
+        fileName: preparedName,
+        bizType,
+      })
 
-    // 2. 直传 OSS：form_data 原样带上，文件字段名固定 file
-    const raw = await readFile(file.filePath)
-    const form = new FormData()
-    for (const [key, value] of Object.entries(data.form_data || {})) {
-      form.append(key, String(value))
-    }
-    form.append('file', new Blob([raw], { type: file.contentType }), file.fileName)
+      // 1. 申请签名（字段与前端 uploadFilesWithOss 完全一致）
+      const sign = await authed('/get_oss_upload_signature', {
+        biz_type: bizType,
+        of_uid: uid,
+        target_type: targetType,
+        custom_object_key: customObjectKey,
+        file_name: file.fileName,
+        file_size: file.fileSize,
+        content_type: file.contentType,
+      })
+      if (!sign || sign.code !== 200) {
+        throw new Error(`申请上传签名失败：${sign?.code ?? '未知'} ${sign?.message || ''}`.trim())
+      }
 
-    const putResponse = await fetch(host, { method: 'POST', body: form })
-    if (!putResponse.ok) {
-      const text = await putResponse.text().catch(() => '')
-      throw new Error(`上传到 OSS 失败：${putResponse.status} ${text.slice(0, 200)}`.trim())
-    }
+      const data = sign.data || {}
+      const host = String(data.host || '').replace(/\/+$/, '')
+      const objectKey = String(data.object_key || '')
+      const uploadFileId = String(data.upload_file_id || '')
+      if (!host) throw new Error('上传签名里没有 host')
+      if (!objectKey || !uploadFileId) throw new Error('上传签名缺少 object_key / upload_file_id')
 
-    // 3. 确认入库（这一步才会把 upload_files 置 active、结算配额）
-    const confirmed = await authed('/confirm_oss_upload', {
-      upload_file_id: uploadFileId,
-      object_key: objectKey,
-    })
-    if (!confirmed || confirmed.code !== 200) {
-      throw new Error(`确认上传失败：${confirmed?.code ?? '未知'} ${confirmed?.message || ''}`.trim())
-    }
+      // 2. 直传 OSS：form_data 原样带上，文件字段名固定 file
+      const raw = await readFile(file.filePath)
+      const form = new FormData()
+      for (const [key, value] of Object.entries(data.form_data || {})) {
+        form.append(key, String(value))
+      }
+      form.append('file', new Blob([raw], { type: file.contentType }), file.fileName)
 
-    const result = confirmed.data || {}
-    const finalUrl = String(result.url || data.public_url || data.url || '')
-    const finalId = String(result.upload_file_id || uploadFileId)
-    const finalType = String(
-      result.file_info?.content_type || result.content_type || file.contentType,
-    ).toLowerCase()
+      const putResponse = await fetch(host, { method: 'POST', body: form })
+      if (!putResponse.ok) {
+        const text = await putResponse.text().catch(() => '')
+        throw new Error(`上传到 OSS 失败：${putResponse.status} ${text.slice(0, 200)}`.trim())
+      }
 
-    logger?.(`媒体上传完成 ${finalId} → ${finalUrl}`)
-    return {
-      upload_file_id: finalId,
-      url: finalUrl,
-      content_type: finalType || 'image/jpeg',
-      object_key: String(result.object_key || objectKey),
-      file_name: file.fileName,
-      file_size: file.fileSize,
+      // 3. 确认入库（这一步才会把 upload_files 置 active、结算配额）
+      const confirmed = await authed('/confirm_oss_upload', {
+        upload_file_id: uploadFileId,
+        object_key: objectKey,
+      })
+      if (!confirmed || confirmed.code !== 200) {
+        throw new Error(`确认上传失败：${confirmed?.code ?? '未知'} ${confirmed?.message || ''}`.trim())
+      }
+
+      const result = confirmed.data || {}
+      const finalUrl = String(result.url || data.public_url || data.url || '')
+      const finalId = String(result.upload_file_id || uploadFileId)
+      const finalType = String(
+        result.file_info?.content_type || result.content_type || file.contentType,
+      ).toLowerCase()
+
+      logger?.(`媒体上传完成 ${finalId} → ${finalUrl}`)
+      return {
+        upload_file_id: finalId,
+        url: finalUrl,
+        content_type: finalType || 'image/jpeg',
+        object_key: String(result.object_key || objectKey),
+        file_name: file.fileName,
+        file_size: file.fileSize,
+        converted_from: convertedFrom || undefined,
+      }
+    } finally {
+      if (cleanup) await cleanup()
     }
   }
 }

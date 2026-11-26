@@ -12,6 +12,7 @@
 
 ### 修复
 
+- **HEIC 支持**：上传前自动把 iPhone 的 HEIC/HEIF 转成 JPG，再走与小程序 / H5 完全相同的三步上传（后端白名单不需要放开 heic，小程序和浏览器也能正常显示）。解码按 `sips`（macOS）→ Windows WIC（需系统装「HEIF 图像扩展」）→ `heif-convert` → `magick` → `ffmpeg` 依次尝试，全失败时给出可执行的安装提示；临时 JPG 在上传结束（成功或失败）后自动清理。
 - 图片上传严格对齐青史标准上传链路（小程序 / H5 的 `utils/upload.js` 与后端 `validate_single_upload_request`），保证三端同一套逻辑：
   - 签名请求补齐 `custom_object_key`，字段命名与前端一致：`biz_type / of_uid / target_type / custom_object_key / file_name / file_size / content_type`
   - 上传前校验扩展名白名单（`career_media` 只允许 jpg/jpeg/png/webp/gif/mp4/mov/m4v/webm）、文件大小必须 > 0，错误提示在前端就给出，不再等后端拒
