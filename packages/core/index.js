@@ -2541,6 +2541,45 @@ export function apply(ctx, config = {}) {
 
   ctx.tools.register(
     defineTool({
+      name: 'qingshi_phone_upload_preview',
+      description:
+        'AI 分类完成后把 planned_events 推到后端，手机/电脑 H5 预览页会立即显示完整分类工作台。' +
+        '必须在 phone_upload_pick 拿到文件列表并按场次分组后调用，H5 靠这个接口拿到 planned_events 轮询渲染。',
+      parameters: {
+        sessionId: { type: 'string', description: '上传会话 id（phone_upload_start 返回）' },
+        plannedEvents: {
+          type: 'array',
+          items: {
+            type: 'object',
+            properties: {
+              title: { type: 'string', description: '事件标题，如"2025 端午故宫游"' },
+              content: { type: 'string', description: '正文描述，开头 100 字内尽量带画面描述' },
+              eventTag: { type: 'string', description: '标签，从 25 个标准标签里选：record/happy/sad/memory/memorial/love/birthday/family/friend/party/festival/work/study/growth/achievement/challenge/turning_point/idea/summary/travel/scenery/food/hobby/spending/savings' },
+              startDate: { type: 'string', description: '日期 YYYY-MM-DD' },
+              location: { type: 'object', description: '{name:"", address:""}' },
+              classification_basis: { type: 'string', description: '分类依据，如"按时间段+地点：同一天都在故宫"' },
+              file_keys: { type: 'array', items: { type: 'string' }, description: '这一组包含的 oss object_key 列表（从 pick 返回的 files 里拿 object_key 字段）' },
+              discard: { type: 'boolean', description: 'true = 这一组放到废弃桶' },
+              merge_to_event_id: { type: 'string', description: '如果要合并到已有事件，填那个事件的 id' },
+              photos: { type: 'array', items: { type: 'object' }, description: '每张图的 ai_analysis 和 keep 标记，如 [{file_key, ai_analysis, keep:true}]' },
+            },
+            required: ['title', 'file_keys'],
+          },
+          description: 'AI 分好的待录入事件列表（至少一条；废弃桶的那条要带 discard:true）',
+        },
+      },
+      required: ['sessionId', 'plannedEvents'],
+      execute: async (args, ctx) => {
+        const { sessionId, plannedEvents } = args
+        const api = phoneUploadApi(ctx)
+        const res = await api.post('/phone_upload/preview', {
+          session_id: sessionId,
+          planned_events: plannedEvents,
+        })
+        return formatResponse(res, '预览已推送，H5 页面正在刷新分类结果')
+      },
+    },
+    {
       name: 'qingshi_phone_upload_finish',
       description:
         '手机上传的收尾：照片已经写入生涯后调用，登记导入结果并删除临时桶里的整个目录；' +
