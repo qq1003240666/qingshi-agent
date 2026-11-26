@@ -159,12 +159,10 @@ const TAG_LABELS = {
 
 // 写记录时给用户的标签清单（顺序与后端 EVENT_TAG_VALUES 一致）
 const TAG_ORDER = [
-  'record', 'happy', 'sad', 'memory', 'memorial', 'love',
-  'birthday', 'family', 'friend', 'party', 'festival',
-  'work', 'study', 'growth', 'achievement', 'challenge', 'turning_point',
-  'idea', 'summary',
-  'travel', 'scenery', 'food', 'hobby',
-  'spending', 'savings',
+  'record', 'birthday', 'happy', 'family', 'friend', 'party', 'festival',
+  'work', 'study', 'growth', 'achievement', 'challenge', 'idea', 'memorial',
+  'summary', 'travel', 'scenery', 'food', 'memory', 'sad', 'love',
+  'consume', 'save', 'turning',
 ]
 const TAG_HINTS = {
   record: '日常里想留下的一件事',
@@ -188,25 +186,18 @@ const TAG_HINTS = {
   memory: '回忆过去',
   sad: '难过的事',
   love: '感情',
-  hobby: '爱好',
-  spending: '花了一笔钱',
-  savings: '存下、攒下了',
-  turning_point: '人生转折',
+  consume: '花了一笔钱',
+  save: '存下、攒下了',
+  turning: '人生转折',
 }
 
 const tagLabel = (tag) => (TAG_LABELS[tag] ? `${TAG_LABELS[tag]}(${tag})` : tag || '记录')
 
-// 同一类事件在线上有过两种写法，统一归到 App 认识的那一套
-const TAG_ALIASES = { consume: 'spending', save: 'savings', turning: 'turning_point' }
+// 同一类事件在线上有过两种写法，比较/统计时先归一
+const TAG_ALIASES = { spending: 'consume', savings: 'save', turning_point: 'turning' }
 const canonicalTag = (tag) => {
   const key = String(tag || '').trim()
   return TAG_ALIASES[key] || key || 'record'
-}
-
-// 后端 start_date 只接受「天」，带时分会被拒绝；统一截到 YYYY-MM-DD
-const dateOnly = (value) => {
-  const text = String(value || '').trim()
-  return /^\d{4}-\d{2}-\d{2}/.test(text) ? text.slice(0, 10) : text
 }
 
 
@@ -1023,11 +1014,11 @@ export function apply(ctx, config = {}) {
     ],
   }[cfg.autoRecord]
 
-    const policyText = [
+  const policyText = [
     '',
-    '## ⛔ 核心原则：先判断是否有对应领域工具，有就直接调',
+    '## 核心原则：先判断是否有对应领域工具，有就直接调',
     '这个插件提供了完整的照片/上传/生涯/族谱领域工具。当用户的话命中下面任何一种场景时，' +
-    '**直接调对应的青史工具**，不要启动任何平台自带的需求收集向导（表单、下拉框、分步提问）——' +
+    '直接调对应的青史工具，不要启动任何平台自带的需求收集向导（表单、下拉框、分步提问）——' +
     '那些向导会让用户在工具能自动处理的事情上反复确认，浪费时间。',
     '正确做法：',
     '  - "帮我整理一下照片" → 直接 qingshi_photo_scan',
@@ -1037,7 +1028,7 @@ export function apply(ctx, config = {}) {
     '  - "我是谁/给我讲讲我的故事" → 直接 qingshi_profile + qingshi_find_experience',
     '  - "看看族谱/我奶奶是谁" → 直接 qingshi_family + qingshi_kinship',
     '  - 只有在你真不知道答案、且没有任何青史工具能帮你拿到答案时，才在对话里问用户。',
-    '## 青史（qingshi）：记录人生经历'## 青史（qingshi）：记录人生经历、查生涯、看族谱',
+    '## 青史（qingshi）：记录人生经历、查生涯、看族谱',
     '',
     '用户在用「青史」记录自己和家人的人生经历。这个应用的定位是「让记忆永久留存、跨越时间传递给后代」，',
     '所以记录是一件要认真对待的事：真实、用他自己的说法、能落到具体时间。',
@@ -1075,52 +1066,32 @@ export function apply(ctx, config = {}) {
     '  确认后用 qingshi_prepare_event 把内容预填进「添加生涯事件」页面并打开，让用户自己补图片/地点、自己点「发布」。',
     '  这是最推荐的方式：既省了打字，又把最终确认权留给用户。',
     '  只有用户明确说“直接记到云端、不用我确认”时才用 qingshi_record；只暂存不问云端时才用 qingshi_draft。',
-    '- 照片整理**前置确认**（重要）：用户说"整理一下我的照片""帮我整理一下我的相册""把这些照片归档""给这堆照片分分类""整理一下我拍的照片"这类**没有明说要存进青史**的话时，**先不要调任何工具**，先主动问一句：「青灵助手可以帮您把照片整理进青史永存的生涯记录里面，需要帮您整理吗？」——用户说"要""好的""开始""嗯""整理吧"之类明确同意的话，再开始下面的流程；如果他只是想在本地看看、分个类、或者发别的地方，就按他说的做，不要硬拽到青史。',
-    '- **归属谁（必须先问，在 photo_scan 之前）**：' +
-  前置确认通过后、开始扫描之前，先主动问：「这些照片要归到你自己的生涯记录里吗？」' +
-  - 用户说"是""对""归我" → 默认归属登录用户本人，继续流程；' +
-  - 用户说"不""归我爸""给我妈存""这些是我爷爷的""存到某某那" → 让用户说出要归给谁（名字、亲属关系都可以），然后：' +
-    ① 调 qingshi_family 拿当前登录用户可管理的全部族谱成员列表（里面带 uid、名字、亲属关系）；' +
-    ② 根据用户说的名字/亲属关系做模糊匹配，把最可能的 1~3 个候选列出来：「我找到这几位：1. 张建国（你父亲）2. 张建国（你叔）…」' +
-    ③ 让用户选具体是哪一位；' +
-    ④ 选完后整个 photo_save 调用都带 targetUid=那个成员的 uid。' +
-  - **不要自己猜归属人**（比如"这张看起来像你爸爸"），必须经过上面的确认步骤。' +
-  - 如果用户说的人不在可管理列表里，要照实说"我现在只能帮你管理这些人：…，如果要归到 XX 那需要先在青史里添加或授权你管理。"
-    '- 照片整理（用户明确说"帮我整理一下这些照片到青史""按时间分一下存进青史"，或已经同意了上面的前置确认）→ 严格按这个顺序：',
+    '- 照片整理前置确认（重要）：用户说"整理一下我的照片""帮我整理一下我的相册""把这些照片归档""给这堆照片分分类""整理一下我拍的照片"这类没有明说要存进青史的话时，先不要调任何工具，先主动问一句：「青灵助手可以帮您把照片整理进青史永存的生涯记录里面，需要帮您整理吗？」——用户说"要""好的""开始""嗯""整理吧"之类明确同意的话，再开始下面的流程；如果他只是想在本地看看、分个类、或者发别的地方，就按他说的做，不要硬拽到青史。',
+    '- 归属谁（必须先问，在 photo_scan 之前）：前置确认通过后、开始扫描之前，先主动问：「这些照片要归到你自己的生涯记录里吗？」用户说"是""对""归我" → 默认归属登录用户本人，继续流程；用户说"不""归我爸""给我妈存""这些是我爷爷的""存到某某那" → 让用户说出要归给谁，然后：① 调 qingshi_family 拿当前登录用户可管理的全部族谱成员列表（里面带 uid、名字、亲属关系）；② 根据用户说的名字/亲属关系做模糊匹配，把最可能的 1~3 个候选列出来让用户确认；③ 确认后整个 photo_save 调用都带 targetUid。不要自己猜归属人（比如"这张看起来像你爸爸"），必须经过上面的确认步骤。',
+    '- 照片整理（用户丢来一堆照片 / 给相册目录，说“帮我整理一下这些照片到青史”“按时间分一下”）→ 严格按这个顺序：',
     '  ① qingshi_photo_scan 扫描（一次没扫完就带 offset 继续扫，直到不再出现「还有更多照片没扫」），拿到按拍摄时间排序的场次；',
-    '  ② 先按时间把场次总览列给用户看：每组的时间、张数、地点、总大小；**只列场次，不要一次性为全部场次起好标题**；',
-    '  ③ 然后**每次只处理一组**：能读图就看几张代表照起标题/写正文/选标签（标签清单用 qingshi_tags 查），读不了就按时间地点命名，但**一定要先 qingshi_find_experience 按"时间"或"地点关键词"查这一天有没有已有记录**；',
-    '  ④ 如果查出同日期或同地点已有记录，先告诉用户："X 月 X 日你已经记了「…」这条，要把这些照片追加进去，还是新建一条独立的？" 用户选追加就用 qingshi_edit 带 imagePaths 追加图片（不要新建重复记录），选新建就走下面；',
-    '  ⑤ **在对话里逐条列出这一组会用到的每一张图片（文件名 / 拍摄时间）**，然后报出"准备这样存：标题 / 标签 / 时间 / 地点 / 正文"，让用户确认任何一项；',
-    '  ⑥ 用户可能改任何一项："标题改成…""标签换风景""时间不对，应该是…""地点写得不准""这两张我不想存""把这三张归到上一组"——**收到任何一项修改都按他说的改，再报一次确认，再调 qingshi_photo_save 且只传这一组 items、并带 confirm=true**；',
-    '  ⑦ **一组一调、一次一确认**，不要攒 N 组一口气调 qingshi_photo_save；同日期查重在工具内部还会再兜一次（标题+日期重复就跳过），但最好在对话里就先发现；',
-    '  ⑧ 全部处理完，逐组告诉用户结果：成功几条、失败几条、各自的 event_id；并主动提醒「这些记录默认所有人可见，要不要改成仅自己可见」，要改就用 qingshi_set_privacy；',
-    '- 手机上传照片**前置确认**（重要）：如果用户只说"把手机上的照片传上来""手机和电脑同步一下""帮我开个二维码传文件"这类**没说要存进青史**的话，**先不要调工具**，先问：「青灵助手可以帮您把手机上的照片上传并整理进青史永存的生涯记录，需要帮您开始吗？」——用户说"要""开始""好"之类的再走流程。但如果用户已经明确说"手机上传照片到青史""用扫码传照片进青史""手机上的照片想传到青史"，那就**不要问**、直接开流程。',
-    '- **归属谁（必须先问，在开二维码之前）**：' +
-  前置确认通过后、开二维码之前，先主动问：「这些照片要归到你自己的生涯记录里吗？」' +
-  - 用户说"是""对""归我" → 默认归属登录用户本人，继续开二维码；' +
-  - 用户说"不""归我爸""给我妈存""传到某某那" → 让用户说出要归给谁（名字、亲属关系都可以），然后：' +
-    ① 调 qingshi_family 拿当前登录用户可管理的全部族谱成员列表；' +
-    ② 根据用户说的名字/亲属关系做模糊匹配，把最可能的 1~3 个候选列出来让用户确认；' +
-    ③ 确认后，下载和整理都带着 targetUid 调 photo_save。'
-    '- 手机上传照片（用户明确说了要传到青史，或已经同意了上面的前置确认）→ 严格按这个顺序：',
+    '  ② 先按时间把场次列给用户看：每组的时间、张数、地点、总大小；先别下结论、别急着写；',
+    '  ③ 如果当前模型能读图，逐组看几张有代表性的照片，按照片内容起标题、写正文、选标签（标签清单用 qingshi_tags 查）；读不了图就按时间和地点命名，并明确告诉用户「我看不到照片内容，标题先按时间地点起」；',
+    '  ④ 告诉用户「这些照片准备这样存到青史」并给出每组的标题 / 正文 / 日期，等用户确认；',
+    '  ⑤ 用户确认后调 qingshi_photo_save：先不带 confirm 拿预览（会自动算出总大小），再带 confirm=true 真正上传；它上传前会核对云空间额度，额度不够会整体拒绝——不要绕过、不要分批硬传，直接告诉用户还差多少；',
+    '  ⑥ 某个场次如果和已有记录是同一次（qingshi_photo_scan 会给出候选），改用 qingshi_edit 带 imagePaths 追加图片，不要新建重复记录；',
+    '  ⑦ 全部处理完，逐组告诉用户结果：成功几条、失败几条、各自的 event_id；',
+    '- 手机上传照片前置确认（重要）：如果用户只说"把手机上的照片传上来""手机和电脑同步一下""帮我开个二维码传文件"这类没说要存进青史的话，先不要调工具，先问：「青灵助手可以帮您把手机上的照片上传并整理进青史永存的生涯记录，需要帮您开始吗？」——用户说"要""开始""好"之类的再走流程。但如果用户已经明确说"手机上传照片到青史""用扫码传照片进青史""手机上的照片想传到青史"，那就不要问、直接开流程。',
+    '- 归属谁（必须先问，在开二维码之前）：前置确认通过后、开二维码之前，先主动问：「这些照片要归到你自己的生涯记录里吗？」用户说"是""对""归我" → 默认归属登录用户本人，继续开二维码；用户说"不""归我爸""给我妈存""传到某某那" → 让用户说出要归给谁，然后：① 调 qingshi_family 拿可管理的族谱成员列表；② 按名字/亲属关系模糊匹配，列 1~3 个候选让用户确认；③ 确认后，下载和整理都带着 targetUid 调 photo_save。',
+    '- 手机上传照片（“手机上传”“用手机传照片”“扫码把相册传上来”）→ 严格按这个顺序：',
     '  ① qingshi_phone_upload_start：生成二维码并打开本机确认窗，让用户用手机扫码选照片；',
-    '  ② 用户说"传完了"或手机点了「完成」后，调 qingshi_phone_upload_status（可带 waitSeconds=30~60）；',
+    '  ② 用户说“传完了”或手机点了「完成」后，调 qingshi_phone_upload_status（可带 waitSeconds=30~60）；',
     '  ③ 状态到 completed 后，先问一句「要无损压缩还是原图？」，再按用户选择调 qingshi_phone_upload_pick；',
-    '  ④ 如果 pick 说缺少 jpegtran / oxipng，先把原因说清楚："这两个是开源无损压缩工具，我可以自动下载到工作区 tools/ 子目录（不写系统目录、不需要管理员权限）"，用户同意后带 allowInstall=true 重调；',
-    '  ⑤ 下载完成后，**同样按「每次只处理一组」的方式**：逐组查同日期已有记录、列出本组所有图片、报标题/标签/时间/地点/正文、等用户确认后再调 qingshi_photo_save（或 qingshi_edit 追加）；',
-    '  ⑥ 写入完成后先提醒「这些记录默认所有人可见，要不要改成仅自己可见」，再调 qingshi_phone_upload_finish 传 eventIds 收尾（删临时区）；用户中途放弃就用 cancel=true；',
-    '  ⑦ 临时区照片只是副本：没保存成功前不要调 finish，也不要说"已经存好了"；',
-    '- 无损压缩工具自动安装（重要）：jpegtran 管 JPEG、oxipng 管 PNG；它们缺失时不要手动装、也不要让用户去官网找——插件有完整的自动安装逻辑，',
-    '  只要用户同意"要我现在装"，带 allowInstall=true 调 qingshi_photo_save（compression=lossless）或 qingshi_phone_upload_pick 即可；装完下次就直接能用、不会重复下载。',
-    '  安装位置在工作区 tools/ 子目录，跟系统 PATH 隔离，不会污染系统。',
-    '  用户主动问"能不能帮我压一下照片"或说"我想无损压缩"时，也可以主动提议开启这个功能。',
-    '- 记录自己的故事 / 感悟（"帮我记一笔""今天……"）→ qingshi_draft 记成本地草稿，等用户确认再发布；',
-    '  感悟类 eventTag 用 idea（想法）、summary（总结）、turning_point（转折）或 record（记录）。',
+    '  ④ 如果 pick 说缺少 jpegtran / oxipng，先把原因说清楚，问「要我现在下载安装吗」，同意后带 allowInstall=true 重调；',
+    '  ⑤ 拿 pick 返回的拍摄时间分组、起标题写正文，给用户确认后走 qingshi_photo_save（或 qingshi_edit 追加）；',
+    '  ⑥ 写入完成后调 qingshi_phone_upload_finish 传 eventIds 收尾（删临时区）；用户中途放弃就用 cancel=true；',
+    '  ⑦ 临时区照片只是副本：没保存成功前不要调 finish，也不要说“已经存好了”；',
+    '- 记录自己的故事 / 感悟（“帮我记一笔”“今天……”）→ qingshi_draft 记成本地草稿，等用户确认再发布；',
+    '  感悟类 eventTag 用 idea（想法）、summary（总结）、turning（转折）或 record（记录）。',
     '- 给家人记录 → 同样先 qingshi_draft（带 targetUid），但代家人写默认关闭，需要用户明确同意。',
-    '- 改已有记录（"把那条改成…""时间写错了"）→ 先 qingshi_event 读原文核对，再 qingshi_edit；',
+    '- 改已有记录（“把那条改成…”“时间写错了”）→ 先 qingshi_event 读原文核对，再 qingshi_edit；',
     '  除非用户已经说清改成什么，否则先 dryRun=true 给他看一眼再写。',
-    '- 删记录（"把那条删了"）→ qingshi_delete 先不带 confirm 做核对，用户明确说删之后，',
+    '- 删记录（“把那条删了”）→ qingshi_delete 先不带 confirm 做核对，用户明确说删之后，',
     '  再带 confirm=true 删一次；插件会自动把整条记录快照存到本地。',
     '- 想找回删掉的 → qingshi_restore：不带 eventId 先列快照，带 eventId 才真写回云端。',
     '- 看某一条的全文或细节 → qingshi_event（单条读），不要用 fullContent 把整批正文拉进来。',
@@ -1567,7 +1538,7 @@ export function apply(ctx, config = {}) {
         eventTag: {
           type: 'string',
           description:
-            '事件标签：record/happy/sad/memory/memorial/love/birthday/family/friend/party/festival/work/study/growth/achievement/challenge/turning_point/idea/summary/travel/scenery/food/hobby/spending/savings',
+            '事件标签：record/birthday/happy/family/friend/party/festival/work/study/growth/achievement/challenge/idea/memorial/summary/travel/scenery/food/memory/sad/love/consume/save/turning',
         },
         targetUid: { type: 'string', description: '要看谁的记录；不填就是用户自己' },
         limit: { type: 'integer', description: '返回条数，默认 20，最大 50' },
@@ -1653,7 +1624,7 @@ export function apply(ctx, config = {}) {
         eventTag: {
           type: 'string',
           description:
-            '事件标签：record/happy/sad/memory/memorial/love/birthday/family/friend/party/festival/work/study/growth/achievement/challenge/turning_point/idea/summary/travel/scenery/food/hobby/spending/savings',
+            '事件标签：record/birthday/happy/family/friend/party/festival/work/study/growth/achievement/challenge/idea/memorial/summary/travel/scenery/food/memory/sad/love/consume/save/turning',
         },
         location: { type: 'string', description: '地点关键词，匹配地点名和地址，如“沈阳”“九寨沟”' },
         targetUid: { type: 'string', description: '查谁的记录；不填就是用户自己' },
@@ -2118,10 +2089,11 @@ export function apply(ctx, config = {}) {
     defineTool({
       name: 'qingshi_photo_scan',
       description:
-        '【触发词】当用户说“帮我整理一下我的照片”“帮我整理我的相册”“整理一下这些照片”“把这些照片归档”“给这堆照片分分类”“帮我看看这些照片”“扫描一下这个相册”“这些照片想传到青史”“整理一下我拍的照片”“这些图片帮我按时间分一下”“这些都是那次旅行拍的”时，直接调这个工具。' +
-        '功能：扫描本机一批照片/视频，按拍摄时间聚成“拍摄场次”，给出每张的拍摄时间、GPS、文件路径；' +
-        '已登录时还会列出与已有生涯记录重合的候选（日期接近 / 地点相近）。只读，不移动、不上传、不改任何文件。' +
-        '扫描完拿到场次后，你自己看几张有代表性的照片确认内容，再决定挂到已有记录还是新建记录。'
+        '扫描本机一批照片/视频，按拍摄时间聚成「拍摄场次」，给出每张的拍摄时间、GPS、文件路径；' +
+        '已登录时还会列出与已有生涯记录重合的候选（日期接近 / 地点相近）。' +
+        '只读，不移动、不上传、不改任何文件。' +
+        '典型用法：用户丢来一堆照片或一个相册目录，说“帮我整理这些照片”“这些都是那次旅行拍的”，' +
+        '先调它拿到时间和场次，你自己看几张有代表性的照片确认内容，再决定挂到已有记录还是新建记录。',
       parameters: {
         paths: {
           type: 'array',
@@ -2232,12 +2204,11 @@ export function apply(ctx, config = {}) {
     defineTool({
       name: 'qingshi_photo_save',
       description:
-        '【触发词】当用户说“把这些照片存到青史”“把这几张图写成一条”“整理完的照片怎么存”“帮我记一笔照片”“写进生涯记录”时，用这个工具把整理好的照片分组写入青史。' +
-        '一组 = 一条生涯记录（标题/正文/时间/地点/标签 + 图片）。**强烈建议每次只传一组 items**，一组一调、一次一确认。' +
-        '必须分两步：① 先不传 confirm 调一次，拿到预览（每组标题、时间、张数、总大小、额度、每张图片的文件名+拍摄时间）给用户确认；' +
-        '② 用户明确同意后再传 confirm=true，才真正上传图片并写入。' +
-        '上传前自动核对云空间额度，不够就整体拒绝。compression=lossless 时用 jpegtran/oxipng 做无损压缩，缺工具会提示用户同意后自动装。' +
-        '写之前可以先调 qingshi_find_experience 查这一天有没有已有记录，避免重复。'
+        '把整理好的照片分组写入青史：一组 = 一条生涯记录（标题/正文/时间/地点/标签 + 图片）。' +
+        '必须分两步：① 先不传 confirm 调一次，拿到预览（每组标题、时间、张数、总大小、额度是否够）给用户确认；' +
+        '② 用户明确同意后再传 confirm=true，这时才真正上传图片并写入。' +
+        '上传前会自动核对云空间额度，不够就整体拒绝，不会传一半。会遍历所有分组，逐组报告结果。',
+      parameters: {
         items: {
           type: 'array',
           required: true,
@@ -2247,7 +2218,7 @@ export function apply(ctx, config = {}) {
             properties: {
               title: { type: 'string', required: true, description: '标题（按照片内容起名）' },
               content: { type: 'string', description: '正文（按照片内容写，保留用户的说法）' },
-              startDate: { type: 'string', description: '拍摄日期，YYYY-MM-DD（只到天，不要带时分）' },
+              startDate: { type: 'string', description: '拍摄日期，YYYY-MM-DD 或 YYYY-MM-DD HH:mm' },
               eventTag: { type: 'string', description: '事件标签，默认 record' },
               locationName: { type: 'string', description: '地点名称' },
               locationAddress: { type: 'string', description: '地点地址' },
@@ -2277,12 +2248,8 @@ export function apply(ctx, config = {}) {
 
         const targetUid = String(args?.targetUid || '').trim() || info.uid
         const isSelf = targetUid === info.uid
-
-        if (!isSelf) {
-          // 检查代家人记录的权限
-          if (info.flags && info.flags.disableFamilyAct) {
-            return `这次要写到 uid: ${targetUid}，但当前账号关闭了"允许代家人记录"。请让插件配置里打开，或改为记在本人名下。`
-          }
+        if (!isSelf && info.flags && info.flags.disableFamilyAct) {
+          return `这次要写到 uid: ${targetUid}，但当前账号关闭了"允许代家人记录"。请让插件配置里打开，或改为记在本人名下。`
         }
 
         const rawItems = Array.isArray(args?.items) ? args.items : []
@@ -2315,7 +2282,7 @@ export function apply(ctx, config = {}) {
           items.push({
             title,
             content: String(item.content || '').trim(),
-            startDate: dateOnly(item.startDate),
+            startDate: String(item.startDate || '').trim(),
             eventTag: String(item.eventTag || 'record').trim() || 'record',
             location: {
               name: String(item.locationName || '').trim(),
@@ -2341,36 +2308,20 @@ export function apply(ctx, config = {}) {
           items.forEach((item, index) => {
             const date = item.startDate || '（未给时间，会记为今天）'
             lines.push(
-              `[${index + 1}] ${item.title} · ${date} · ${item.eventTag || 'record'} · ${item.imagePaths.length} 张 / ${formatBytes(item.bytes)}`,
+              `[${index + 1}] ${item.title} · ${date} · ${item.imagePaths.length} 张 / ${formatBytes(item.bytes)}`,
             )
             if (item.location.name || item.location.address) {
               lines.push(`    地点：${item.location.name}${item.location.address && item.location.address !== item.location.name ? '（' + item.location.address + '）' : ''}`)
             }
             const brief = item.content ? item.content.slice(0, 60) + (item.content.length > 60 ? '…' : '') : '（空）'
             lines.push(`    正文：${brief}`)
-            // 列出本组图片清单（前 12 张），让模型能带着图片清单去跟用户逐条确认
-            if (item.imagePaths.length) {
-              const shown = item.imagePaths.slice(0, 12)
-              const imgNames = shown.map((p) => {
-                const base = p.split(/[/\\]/).pop()
-                try {
-                  const mtime = require('node:fs').statSync(p).mtime
-                  const when = (mtime.getFullYear() + '-' + String(mtime.getMonth() + 1).padStart(2, '0') + '-' + String(mtime.getDate()).padStart(2, '0'))
-                  return `${base}(${when})`
-                } catch { return base }
-              })
-              lines.push(`    图片清单：${imgNames.join(' / ')}`)
-              if (item.imagePaths.length > 12) lines.push(`    …还有 ${item.imagePaths.length - 12} 张`)
-            }
           })
           lines.push('', quotaLine)
           if (quota.ok && totalBytes > quota.remaining) {
             lines.push(`额度不够：还差 ${formatBytes(totalBytes - quota.remaining)}，这时不能保存。`)
           }
           if (problems.length) lines.push('', ...problems)
-          lines.push('', '在对话里逐条跟用户确认：要不要改标题 / 时间 / 地点 / 标签，要不要删某几张、要不要把某些图归到上一组。')
-          lines.push('推荐每组单独调一次本工具、一组一确认；改完一组再改下一组，不要攒着。')
-          lines.push('全部确认完后，再调一次 qingshi_photo_save，这次传 confirm=true。')
+          lines.push('', '用户确认后，再调一次 qingshi_photo_save，这次传 confirm=true。')
           return lines.join('\n')
         }
 
@@ -2385,23 +2336,8 @@ export function apply(ctx, config = {}) {
           ].join('\n')
         }
 
-        const existingResult = await careerApi.listEvents(info.uid)
-        const existingKeys = new Set()
-        if (existingResult.ok) {
-          for (const event of existingResult.events) {
-            const existingTitle = String(event.title || '').trim()
-            const existingDate = dateOnly(event.start_date || event.startDate || '')
-            if (existingTitle) existingKeys.add(`${existingTitle}|${existingDate}`)
-          }
-        }
-
         const results = []
         for (const [index, item] of items.entries()) {
-          const itemKey = `${item.title}|${item.startDate || todayText()}`
-          if (existingKeys.has(itemKey)) {
-            results.push(`[${index + 1}] 跳过：${item.title} · ${item.startDate || '今天'} 已经有同名同日期的记录，不重复创建`)
-            continue
-          }
           const media = []
           const failed = []
           for (const file of item.imagePaths) {
@@ -2425,7 +2361,6 @@ export function apply(ctx, config = {}) {
 
           const added = await authed('/add_event', payload)
           if (added.code === 200) {
-            existingKeys.add(itemKey)
             const eventId = added.event_id || pick(added.data, 'event_id', 'eventId') || ''
             results.push(
               `[${index + 1}] 已写入：${item.title}${eventId ? `（event_id: ${eventId}）` : ''} · ${media.length} 张`,
@@ -2441,7 +2376,7 @@ export function apply(ctx, config = {}) {
           ...results,
           '',
           quotaLine,
-          '注意：这些记录默认是「所有人可见」。请询问用户是否需要改成「仅自己可见」，需要的话再调 qingshi_set_privacy。',
+          '注意：这些记录默认是「所有人可见」。要改成仅自己可见，可以用 qingshi_set_privacy。',
         ].join('\n')
       },
     }),
@@ -2452,7 +2387,7 @@ export function apply(ctx, config = {}) {
     defineTool({
       name: 'qingshi_phone_upload_start',
       description:
-        '用户说「手机上传」「用手机传照片」「扫码传照片」「手机上的照片想传上来」「我手机有些照片要传到青史」「用手机扫码传」「把手机相册里的东西同步过来」「手机扫码上传」「帮我开个上传二维码」时用：在电脑上生成这个账号专属的上传二维码，' +
+        '用户说「手机上传」「用手机传照片」「扫码传照片」时用：在电脑上生成这个账号专属的上传二维码，' +
         '并打开一个本机确认窗（手机传了哪些、传了多少会实时显示）。' +
         '照片只先暂存在临时桶，不占配额、不进正式相册；等电脑下载回本地后才走标准上传。' +
         '已有一个没超时的上传会话时会直接复用，不会重复建。',
@@ -2542,10 +2477,8 @@ export function apply(ctx, config = {}) {
       description:
         '把手机已经传完的照片下载回这台电脑，落到本地暂存目录，并读出每张的拍摄时间和 GPS。' +
         'compression=lossless 时对 JPEG 用 jpegtran、PNG 用 oxipng 做无损压缩；' +
-        '这两个工具缺失不会偷偷装上：先返回提示让用户点头，**用户同意后带 allowInstall=true 再调一次即可**——' +
-        '插件会把二进制下载到工作区 tools/ 子目录（不写系统目录、不需要管理员权限、装完永久可用），' +
-        '第二次再调同一批照片不会重复下载，只会重跑压缩。' +
-        'HEIC 会在这一步转成 JPG。下载完成后，按"每次一组"的方式给用户逐组起标题/确认/再调 qingshi_photo_save。',
+        '这两个工具缺失不会偷偷装上：先返回提示，用户同意后再带 allowInstall=true 调一次。' +
+        'HEIC 会在这一步转成 JPG。下载完成后，用 qingshi_photo_scan / qingshi_photo_save 继续分组归档。',
       parameters: {
         compression: {
           type: 'string',
@@ -2583,14 +2516,13 @@ export function apply(ctx, config = {}) {
         if (result.needConsent) {
           lines.push(
             '',
-            `这台电脑还没有无损压缩工具（jpegtran / oxipng）。我可以自动下载到 ${result.toolsDir}——`,
-            '只写这个本地目录、不动系统 PATH、不需要管理员权限。要现在装吗？',
-            '用户同意后，带 allowInstall=true 再调一次 qingshi_phone_upload_pick 且保持 compression=lossless；已经下载过的照片不会重复下载，只会重跑压缩。',
+            `这台电脑还没有无损压缩工具。要我现在下载安装到 ${result.toolsDir} 吗？（只装本地，不动系统目录）`,
+            '用户同意后，用 allowInstall=true 再调一次 qingshi_phone_upload_pick；已经下载过的照片不会重复下载。',
           )
         } else {
           lines.push(
             '',
-            '下一步：按拍摄时间把这些照片分组，**每次只处理一组**——逐组查同日期已有记录、列出本组所有图片、报标题/标签/时间/地点/正文、等用户确认后再调 qingshi_photo_save；',
+            '下一步：按拍摄时间把这些照片分组、起标题写正文给用户确认，然后用 qingshi_photo_save 写入青史；',
             '全部写完后调 qingshi_phone_upload_finish（传 eventIds）清理临时区。',
           )
         }
@@ -2643,7 +2575,7 @@ export function apply(ctx, config = {}) {
       parameters: {
         title: { type: 'string', required: true, description: '标题，简短' },
         content: { type: 'string', description: '正文，保留用户自己的说法' },
-        startDate: { type: 'string', description: '开始时间 YYYY-MM-DD（只到天，不要带时分）；不填就是今天' },
+        startDate: { type: 'string', description: '开始时间 YYYY-MM-DD 或 YYYY-MM-DD HH:mm；不填就是今天' },
         endDate: { type: 'string', description: '结束时间，仅阶段事件需要' },
         isStage: { type: 'boolean', description: '是否阶段事件，默认 false' },
         eventTag: { type: 'string', description: '事件标签，默认 record' },
@@ -2666,8 +2598,8 @@ export function apply(ctx, config = {}) {
         const draft = await drafts.save({
           title,
           content: String(args?.content || '').trim(),
-          startDate: dateOnly(args?.startDate),
-          endDate: dateOnly(args?.endDate),
+          startDate: String(args?.startDate || '').trim(),
+          endDate: String(args?.endDate || '').trim(),
           isStage: Boolean(args?.isStage),
           eventTag: String(args?.eventTag || 'record').trim(),
           location: {
@@ -2781,7 +2713,7 @@ export function apply(ctx, config = {}) {
       name: 'qingshi_open_h5',
       description:
         '打开（或复用）青史真 H5 的独立桌面窗口（qingshi.iyouwc.cn），并顺带把登录态同步回本地工作区。' +
-        '用户说「打开青史」「把青史打开」「打开那个窗口」「打开一下青史」「开青史」「启动青史」「去青史看看」「我想看看青史」「看看我的生涯」「看看族谱」时，直接调用这个工具，不要先解释或先查项目。' +
+        '用户说「打开青史」「把青史打开」「打开那个窗口」时，直接调用这个工具，不要先解释或先查项目。' +
         '这才是用户手机里那个应用的完整界面：生涯、族谱、发现、AI 助手、时光胶囊、个人中心都在这里。' +
         '想让用户看某个页面时直接传 route。',
       parameters: routeParam,
@@ -3023,13 +2955,13 @@ export function apply(ctx, config = {}) {
         eventId: { type: 'string', required: true, description: '要改的事件 id' },
         title: { type: 'string', description: '新标题；不改就不传' },
         content: { type: 'string', description: '新正文（整段替换，不是追加）；不改就不传' },
-        startDate: { type: 'string', description: '新的开始时间，YYYY-MM-DD（只到天，不要带时分）' },
+        startDate: { type: 'string', description: '新的开始时间，YYYY-MM-DD 或 YYYY-MM-DD HH:mm' },
         endDate: { type: 'string', description: '新的结束时间；阶段事件才需要' },
         isStage: { type: 'boolean', description: 'true=改成跨时间的阶段事件；false=改回单日' },
         eventTag: {
           type: 'string',
           description:
-            '新的事件标签：record/happy/sad/memory/memorial/love/birthday/family/friend/party/festival/work/study/growth/achievement/challenge/turning_point/idea/summary/travel/scenery/food/hobby/spending/savings',
+            '新的事件标签：record/birthday/happy/family/friend/party/festival/work/study/growth/achievement/challenge/idea/memorial/summary/travel/scenery/food/memory/sad/love/consume/save/turning',
         },
         location: {
           type: 'object',
@@ -3056,8 +2988,6 @@ export function apply(ctx, config = {}) {
           if (args?.[key] !== undefined) patch[key] = args[key]
         }
         if (args?.location !== undefined) patch.location = args.location
-        if (patch.startDate !== undefined) patch.startDate = dateOnly(patch.startDate)
-        if (patch.endDate !== undefined) patch.endDate = dateOnly(patch.endDate)
         const imagePaths = Array.isArray(args?.imagePaths)
           ? args.imagePaths.map((item) => String(item || '').trim()).filter(Boolean)
           : []
