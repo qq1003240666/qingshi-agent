@@ -435,8 +435,7 @@ poll(); setInterval(poll, 2000);
       : []
     const result = await authed('/phone_upload/imported', { session_id: sessionId, event_ids: ids })
     if (result.code !== 200) return { ok: false, message: `归档收尾失败：${result.message || ''}` }
-    // 本地下载目录只在确认归档后删，避免误删唯一一份照片
-    await rm(join(workspaceDir, 'phone-upload', sessionId), { recursive: true, force: true }).catch(() => {})
+    // 只清后端临时目录：本地下载的照片是用户原图的副本，保留在 phone-upload/<session_id>/ 不动
     await clearState()
     return {
       ok: true,
