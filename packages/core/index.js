@@ -1070,9 +1070,9 @@ export function apply(ctx, config = {}) {
     '- 归属谁（必须先问，在 photo_scan 之前）：前置确认通过后、开始扫描之前，先主动问：「这些照片要归到你自己的生涯记录里吗？」用户说"是""对""归我" → 默认归属登录用户本人，继续流程；用户说"不""归我爸""给我妈存""这些是我爷爷的""存到某某那" → 让用户说出要归给谁，然后：① 调 qingshi_family 拿当前登录用户可管理的全部族谱成员列表（里面带 uid、名字、亲属关系）；② 根据用户说的名字/亲属关系做模糊匹配，把最可能的 1~3 个候选列出来让用户确认；③ 确认后整个 photo_save 调用都带 targetUid。不要自己猜归属人（比如"这张看起来像你爸爸"），必须经过上面的确认步骤。',
     '- 照片整理（用户丢来一堆照片 / 给相册目录，说“帮我整理一下这些照片到青史”“按时间分一下”）→ 严格按这个顺序：',
     '  ① qingshi_photo_scan 扫描（一次没扫完就带 offset 继续扫，直到不再出现「还有更多照片没扫」），拿到按拍摄时间排序的场次；',
-    '  ② 先按时间把场次列给用户看：每组的时间、张数、地点、总大小；先别下结论、别急着写；',
+    '  ② 先按时间把场次列给用户看：每组的时间、张数、地点、总大小；先别下结论、别急着写；**分类优先按时间段（同一天内归一组），其次看地点（换了城市可能换事件），最后看内容（同一天同一个地点但内容完全不同可以拆）**。如果用户有偏好（"优先按地点分""按每次出门分"），听用户的；',
     '  ③ 如果当前模型能读图，逐组看几张有代表性的照片，按照片内容起标题、写正文、选标签（标签清单用 qingshi_tags 查）；读不了图就按时间和地点命名，并明确告诉用户「我看不到照片内容，标题先按时间地点起」；',
-    '  ④ 告诉用户「这些照片准备这样存到青史」并给出每组的标题 / 正文 / 日期，等用户确认；',
+    '  ④ **每次只处理一组**，处理完一组在对话里明确告诉用户：「这组 X 张照片准备这样存：标题 XXX / 时间 XXX / 地点 XXX / 标签 XXX / 正文 XXX」+ **分类依据说明**（"这组按时间段分，因为都是 2025-08-15 下午在办公室拍的"）+ **每张图片的本地路径**（让用户能点击打开看）。然后问用户 OK 吗，确认后再调 qingshi_photo_save；',
     '  ⑤ 用户确认后调 qingshi_photo_save：先不带 confirm 拿预览（会自动算出总大小），再带 confirm=true 真正上传；它上传前会核对云空间额度，额度不够会整体拒绝——不要绕过、不要分批硬传，直接告诉用户还差多少；',
     '  ⑥ 某个场次如果和已有记录是同一次（qingshi_photo_scan 会给出候选），改用 qingshi_edit 带 imagePaths 追加图片，不要新建重复记录；',
     '  ⑦ 全部处理完，逐组告诉用户结果：成功几条、失败几条、各自的 event_id；',
@@ -2308,13 +2308,21 @@ export function apply(ctx, config = {}) {
           items.forEach((item, index) => {
             const date = item.startDate || '（未给时间，会记为今天）'
             lines.push(
-              `[${index + 1}] ${item.title} · ${date} · ${item.imagePaths.length} 张 / ${formatBytes(item.bytes)}`,
+              `\n[${index + 1}] ${item.title} · ${date} · 标签 ${item.eventTag} · ${item.imagePaths.length} 张 / ${formatBytes(item.bytes)}`,
             )
             if (item.location.name || item.location.address) {
               lines.push(`    地点：${item.location.name}${item.location.address && item.location.address !== item.location.name ? '（' + item.location.address + '）' : ''}`)
             }
-            const brief = item.content ? item.content.slice(0, 60) + (item.content.length > 60 ? '…' : '') : '（空）'
+            const brief = item.content ? item.content.slice(0, 120) + (item.content.length > 120 ? '…' : '') : '（空）'
             lines.push(`    正文：${brief}`)
+            if (item.imagePaths.length) {
+              lines.push('    图片清单（本地路径，可点击打开）：')
+              item.imagePaths.forEach((p, i) => {
+                const fileName = p.split(/[\\/]/).pop()
+                lines.push(`      ${i + 1}. ${fileName}`)
+                lines.push(`         ${p}`)
+              })
+            }
           })
           lines.push('', quotaLine)
           if (quota.ok && totalBytes > quota.remaining) {
