@@ -1,7 +1,7 @@
 ﻿# 青史 Agent · 插件作用说明
 
 > 本文档面向**终端用户**和**AI Agent**（MCP server 的 system instructions 也会参考这里的说法）。
-> 完整安装指南见 [README.md](../README.md)，36 个工具的参数明细见 [docs/TOOLS.md](TOOLS.md)。
+> 完整安装指南见 [README.md](../README.md)，37 个工具的参数明细见 [docs/TOOLS.md](TOOLS.md)。
 
 ---
 
@@ -37,7 +37,7 @@
 青史 Agent 做了三件事：
 
 ```
-一份内核        →  同时给 DSH（原生气泡）和 MCP（36 个标准工具）用
+一份内核        →  同时给 DSH（原生气泡）和 MCP（37 个标准工具）用
 一键配置        →  qingshi install --client <trae|codex|claude-code|...>
 真实数据源      →  全部从青史永存后端实时拉，AI 永远读的是你最新的记录
 ```
@@ -98,6 +98,19 @@ AI：妈妈本名李秀英，1972 年生，今年 53 岁。
 2. 挑 `travel`（旅行）+ `scenery`（风景）
 3. `qingshi_record` 整理成标准记录（**不传 `confirm: true` 只生成预览，不真写云端**）
 4. 等你确认后才 `confirm: true` 写入
+
+### 📷 一堆照片，自动整理成经历
+
+你说 **"帮我整理这些照片"** 并给一个相册目录（或直接把照片拖进对话），AI 会：
+
+1. `qingshi_photo_scan` 扫描目录，读出每张的**拍摄时间**（EXIF → 文件名 → 文件时间，三级兜底）和 **GPS 坐标**
+2. 按时间间隔（默认 2 小时）加地点距离自动聚成「拍摄场次」
+3. 如果那天你已经有一条记录，它直接告诉你「这 18 张和《青龙峡徒步》大概率是同一次，相距 0.4km」
+4. AI 看几张有代表性的照片确认内容（海边、火锅、婚礼现场…），然后按你的意思：
+   - **挂到已有记录** → `qingshi_edit` 带 `imagePaths`，追加图片、不覆盖原有，支持 `dryRun` 预览
+   - **从零新建** → `qingshi_draft` 带 `imagePaths`，`startDate` 直接用 EXIF 里的拍摄日期
+
+整个扫描是**只读**的：不移动、不上传、不改任何文件。上传只在你确认发布或修改时才发生。
 
 ### 🪟 AI 直接操作青史页面
 
@@ -181,7 +194,7 @@ MCP server 在 `initialize` 阶段会自动注入以下系统指令，让模型�
 
 ---
 
-## 36 个工具一览（按功能分组）
+## 37 个工具一览（按功能分组）
 
 ### 登录 / 身份管理（5）
 `qingshi_login` · `qingshi_save_login` · `qingshi_logout` · `qingshi_where` · `qingshi_me`
@@ -194,6 +207,9 @@ MCP server 在 `initialize` 阶段会自动注入以下系统指令，让模型�
 
 ### 族谱（9）
 `qingshi_family` · `qingshi_family_all` · `qingshi_family_add` · `qingshi_family_invite` · `qingshi_kinship` · `qingshi_open_event` · `qingshi_prepare_event` · `qingshi_family_expand` · `qingshi_family_layout`
+
+### 照片整理（1）
+`qingshi_photo_scan`
 
 ### 窗口自动化（9）
 `qingshi_open_h5` · `qingshi_ui_read` · `qingshi_ui_goto` · `qingshi_ui_click` · `qingshi_ui_type` · `qingshi_ui_tap` · `qingshi_ui_shot` · `qingshi_skill` · `qingshi_profile`
@@ -241,7 +257,7 @@ node dist/cli/bin/qingshi.mjs doctor
 ## 技术架构（给开发者）
 
 ```
-packages/core/index.js          青史内核（36 个工具定义 + 登录流程 + 请求层）
+packages/core/index.js          青史内核（37 个工具定义 + 登录流程 + 请求层）
 packages/core/lib/             工具模块（request / browser / career-api / workspace / paths / tool-manifest ...）
 packages/dsh-adapter/          DSH 原生适配（cordis.patch.yml / 安装器 / locale）
 packages/mcp-server/mcp/       标准 MCP server（协议协商 / JSON Schema 转换 / annotations）

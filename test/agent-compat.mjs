@@ -60,7 +60,7 @@ await new Promise((r) => child.stdin.write(JSON.stringify({ jsonrpc: '2.0', meth
 const toolsMsg = await rpc('tools/list', {})
 const tools = toolsMsg.result?.tools || []
 check('tools/list 返回数组', Array.isArray(tools), typeof tools)
-check('工具数量 ≥ 36', tools.length >= 36, `实际 ${tools.length}`)
+check('工具数量 ≥ 37', tools.length >= 37, `实际 ${tools.length}`)
 
 // 3. 每个 tool 必须满足的条件（WorkBuddy 严格校验这些）
 const schemaFailures = []

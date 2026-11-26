@@ -10,7 +10,7 @@
 
 - 覆盖 7 种 MCP 客户端：Codex / Claude Code / Trae / WorkBuddy / Cursor / Cline / Windsurf
 - 同时兼容 DeepSeek Harness（DSH）——一份内核，两种用法
-- **36 个工具**：登录、查资料、读/写生涯事件、族谱导航、亲属称谓计算、窗口自动化
+- **37 个工具**：登录、查资料、读/写生涯事件、族谱导航、亲属称谓计算、照片场次扫描、窗口自动化
 - 标准 stdio MCP 协议（支持 2025-06-18 / 2025-03-26 / 2024-11-05）
 - 完整能力说明见 [docs/FEATURES.md](docs/FEATURES.md)
 
@@ -31,6 +31,10 @@
 **记新的一笔**
 > 你：我今天去了趟青龙峡，风景真好。帮我记一下。
 > AI：调 `qingshi_tags` 看标签清单，挑 `travel`（旅行）和 `scenery`（风景），整理好时间地点正文，调 `qingshi_record`——需要你确认（`confirm: true`）才真的写入云端。
+
+**一堆照片，整理成经历**
+> 你：这些照片帮我整理一下（丢过来 `D:\相册\2023云南` 或直接拖进对话）。
+> AI：调 `qingshi_photo_scan` 扫出 47 张、3 个拍摄场次——2023-08-15 大理 18 张（和你那条《大理之行》相距 1.2km）、2024-02-10 家里 9 张、2025-05-01 洱海 20 张。它自己看几张确认是苍山、古城和洱海，然后问你要并入已有记录还是新建。
 
 **AI 操作青史页面**
 > 你：打开族谱，看看我爷爷那支。
@@ -87,7 +91,7 @@ node dist/cli/bin/qingshi.mjs doctor
 Node 22.x.x  OK
 MCP server  <你的解压目录>/dist/mcp-server/bin/qingshi-mcp.mjs
 协议  2025-06-18  server qingshi@0.24.0
-工具  36 个
+工具  37 个
 instructions 已注入
 
 自检通过
@@ -130,7 +134,7 @@ qingshi clients       列出支持的客户端
 
 ---
 
-## 工具清单（36 个）
+## 工具清单（37 个）
 
 ### 登录 / 身份
 
@@ -179,6 +183,12 @@ qingshi clients       列出支持的客户端
 | `qingshi_prepare_event` | 为创建 / 编辑事件准备好页面状态 |
 | `qingshi_family_expand` | 展开某个节点查看下一层 |
 | `qingshi_family_layout` | 调整族谱里某个节点的位置 |
+
+### 照片整理
+
+| 工具 | 说明 |
+| --- | --- |
+| `qingshi_photo_scan` | 扫描照片/视频，读 EXIF 拍摄时间和 GPS，按场次聚类，并匹配已有生涯记录（只读） |
 
 ### 窗口自动化（需要弹出青史 H5 窗口）
 

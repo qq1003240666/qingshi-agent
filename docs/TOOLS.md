@@ -1,6 +1,6 @@
 # 工具清单
 
-共 36 个工具。这份文件由 `npm run gen-docs` 生成，请勿手改。
+共 37 个工具。这份文件由 `npm run gen-docs` 生成，请勿手改。
 
 | 工具 | 标题 | 类型 |
 | --- | --- | --- |
@@ -40,3 +40,4 @@
 | `qingshi_family_add` | 添加族谱成员 | 写入 |
 | `qingshi_family_invite` | 生成族谱邀请码 | 写入 |
 | `qingshi_family_all` | 读取完整族谱 | 只读 |
+| `qingshi_photo_scan` | 扫描照片场次 | 只读 |

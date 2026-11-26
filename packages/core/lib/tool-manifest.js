@@ -17,6 +17,7 @@ const READ_ONLY = new Set([
   'qingshi_family',
   'qingshi_kinship',
   'qingshi_family_all',
+  'qingshi_photo_scan',
 ])
 
 // 会覆盖或删除既有数据的操作
@@ -32,6 +33,7 @@ const LOCAL_ONLY = new Set([
   'qingshi_ui_tap',
   'qingshi_ui_shot',
   'qingshi_family_layout',
+  'qingshi_photo_scan',
 ])
 
 const TITLES = {
@@ -71,6 +73,7 @@ const TITLES = {
   qingshi_family_add: '添加族谱成员',
   qingshi_family_invite: '生成族谱邀请码',
   qingshi_family_all: '读取完整族谱',
+  qingshi_photo_scan: '扫描照片场次',
 }
 
 export const TOOL_MANIFEST = Object.freeze(

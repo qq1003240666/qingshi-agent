@@ -30,6 +30,7 @@ import { openInWindow } from './lib/open-browser.js'
 import { PAGES, findPages, pageUrl, pageBrief } from './lib/pages-map.js'
 import { installWindowBar } from './lib/window-bar.js'
 import { createCareerApi } from './lib/career-api.js'
+import { scanMedia, formatScan } from './lib/photo-scan.js'
 import { createUserCache } from './lib/users.js'
 import { setHost, setClientInfo, resolveClientLabel, appendAttribution } from './lib/attribution.js'
 import { readFile, writeFile, readdir } from 'node:fs/promises'
@@ -1041,6 +1042,10 @@ export function apply(ctx, config = {}) {
     '  确认后用 qingshi_prepare_event 把内容预填进「添加生涯事件」页面并打开，让用户自己补图片/地点、自己点「发布」。',
     '  这是最推荐的方式：既省了打字，又把最终确认权留给用户。',
     '  只有用户明确说“直接记到云端、不用我确认”时才用 qingshi_record；只暂存不问云端时才用 qingshi_draft。',
+    '- 用户丢来一堆照片 / 给一个相册目录（“帮我整理这些照片”“这些都是那次旅行拍的”“按时间分一下”）→ ' +
+      '先 qingshi_photo_scan 拿拍摄时间和场次（有候选记录会一起给出）；' +
+      '你自己看几张有代表性的照片确认内容，再逐场次提议：挂到已有记录用 qingshi_edit 带 imagePaths，' +
+      '新建用 qingshi_draft 带 imagePaths、startDate 用 EXIF 里的日期；不要一次性写很多条，先给用户看分组结果；',
     '- 记录自己的故事 / 感悟（“帮我记一笔”“今天……”）→ qingshi_draft 记成本地草稿，等用户确认再发布；',
     '  感悟类 eventTag 用 idea（想法）、summary（总结）、turning（转折）或 record（记录）。',
     '- 给家人记录 → 同样先 qingshi_draft（带 targetUid），但代家人写默认关闭，需要用户明确同意。',
@@ -2039,6 +2044,71 @@ export function apply(ctx, config = {}) {
     }),
   )
 
+  // ---------- qingshi_photo_scan ----------
+  ctx.tools.register(
+    defineTool({
+      name: 'qingshi_photo_scan',
+      description:
+        '扫描本机一批照片/视频，按拍摄时间聚成「拍摄场次」，给出每张的拍摄时间、GPS、文件路径；' +
+        '已登录时还会列出与已有生涯记录重合的候选（日期接近 / 地点相近）。' +
+        '只读，不移动、不上传、不改任何文件。' +
+        '典型用法：用户丢来一堆照片或一个相册目录，说“帮我整理这些照片”“这些都是那次旅行拍的”，' +
+        '先调它拿到时间和场次，你自己看几张有代表性的照片确认内容，再决定挂到已有记录还是新建记录。',
+      parameters: {
+        paths: {
+          type: 'array',
+          items: { type: 'string' },
+          required: true,
+          description: '照片文件夹或单个文件的路径，可以传多个；文件夹会递归扫描',
+        },
+        maxPhotos: { type: 'number', description: '最多扫描多少个文件，默认 300，上限 2000' },
+        gapMinutes: {
+          type: 'number',
+          description: '相邻两张间隔超过多少分钟就算新的场次，默认 120（两小时）',
+        },
+        matchEvents: {
+          type: 'boolean',
+          description: '是否和已有生涯记录比对，默认 true；没登录时自动跳过',
+        },
+        detail: {
+          type: 'boolean',
+          description: '是否列出每场次的所有照片；默认每个场次只列前 20 张',
+        },
+      },
+      output: outputSpec,
+      async execute(args) {
+        const paths = Array.isArray(args?.paths)
+          ? args.paths.map((item) => String(item || '').trim()).filter(Boolean)
+          : []
+        if (!paths.length) return '请给至少一个照片文件夹或文件的路径（可以传多个）。'
+
+        const toInt = (value, min, max, fallback) => {
+          const n = Number(value)
+          if (!Number.isFinite(n)) return fallback
+          return Math.min(max, Math.max(min, Math.round(n)))
+        }
+        const maxMedia = toInt(args?.maxPhotos, 1, 2000, 300)
+        const gapMinutes = toInt(args?.gapMinutes, 5, 24 * 60, 120)
+
+        let events = []
+        let tail = ''
+        if (args?.matchEvents !== false) {
+          const info = await workspace.info()
+          if (info.loggedIn) {
+            const list = await careerApi.listEvents(info.uid, { previewLimit: 200 })
+            if (list.ok) events = list.events
+            else tail = `\n（读生涯列表失败：${list.message || list.code}，这次只按时间聚类）`
+          } else {
+            tail = '\n（还没登录青史：只按时间聚类，没法和已有记录比对；登录后再扫一次可以匹配）'
+          }
+        }
+
+        const result = await scanMedia(paths, { maxMedia, gapMinutes, events })
+        return formatScan(result, { detail: args?.detail === true }) + tail
+      },
+    }),
+  )
+
   // ---------- qingshi_draft ----------
   ctx.tools.register(
     defineTool({
@@ -2444,6 +2514,13 @@ export function apply(ctx, config = {}) {
           description: '新地点 { name, address, latitude, longitude }；name 和 address 都空等于清掉地点',
         },
         dryRun: { type: 'boolean', description: 'true=只预览会变成什么，不真的写入' },
+        imagePaths: {
+          type: 'array',
+          items: { type: 'string' },
+          description:
+            '要追加到这条记录的图片（本机绝对路径）。会和原有图片合并，不会清掉已上传的；' +
+            '只有图片、不传其它字段也可以。dryRun 时不上传。',
+        },
       },
       output: outputSpec,
       async execute(args) {
@@ -2456,9 +2533,54 @@ export function apply(ctx, config = {}) {
           if (args?.[key] !== undefined) patch[key] = args[key]
         }
         if (args?.location !== undefined) patch.location = args.location
-        if (Object.keys(patch).length === 0) return '没给要改的字段。至少要传 title/content/startDate/endDate/isStage/eventTag/location 之一。'
+        const imagePaths = Array.isArray(args?.imagePaths)
+          ? args.imagePaths.map((item) => String(item || '').trim()).filter(Boolean)
+          : []
+        if (Object.keys(patch).length === 0 && !imagePaths.length) {
+          return '没给要改的字段。至少要传 title/content/startDate/endDate/isStage/eventTag/location/imagePaths 之一。'
+        }
 
         const dryRun = args?.dryRun === true
+        const warnings = []
+
+        // 图片是「追加」语义：读出现有 media_list，上传新的，再整体回写
+        if (imagePaths.length && !dryRun) {
+          const found = await careerApi.getEvent(eventId)
+          if (!found.ok) return '读不到原记录：' + found.code + ' ' + (found.message || '')
+          const existing = Array.isArray(found.event?.media_list) ? found.event.media_list : []
+          const added = []
+          for (const file of imagePaths) {
+            try {
+              const uploaded = await uploadMedia(authed, file, { uid: info.uid })
+              added.push({
+                upload_file_id: uploaded.upload_file_id,
+                url: uploaded.url,
+                content_type: uploaded.content_type,
+              })
+            } catch (error) {
+              warnings.push(`图片 ${file} 没上传成功：${error.message}`)
+            }
+          }
+          patch.mediaList = [
+            ...existing
+              .filter((item) => item && item.upload_file_id && item.url)
+              .map((item) => ({
+                upload_file_id: String(item.upload_file_id),
+                url: String(item.url),
+                content_type: String(item.content_type || '').toLowerCase(),
+              })),
+            ...added,
+          ]
+        }
+
+        if (dryRun && Object.keys(patch).length === 0 && imagePaths.length) {
+          return [
+            '（预览，还没写入）这条记录会追加 ' + imagePaths.length + ' 张图片，其它字段不变：',
+            ...imagePaths.map((file) => '- ' + file),
+            '',
+            '确认没问题就再调一次 qingshi_edit，这次 dryRun=false 或不传。',
+          ].join('\n')
+        }
         const result = await careerApi.updateEvent(eventId, patch, { dryRun })
         if (!result.ok) {
           return '修改失败：' + result.code + ' ' + (result.message || '')
@@ -2472,6 +2594,7 @@ export function apply(ctx, config = {}) {
           lines.push('- ' + FIELD_LABELS_PLUGIN[key] + '：' + before + ' → ' + after)
         }
         if (dryRun) lines.push('', '确认没问题就再调一次 qingshi_edit，这次 dryRun=false 或干脆不传。')
+        if (warnings.length) lines.push('', ...warnings.map((text) => '注意：' + text))
         return lines.join('\n')
       },
     }),
