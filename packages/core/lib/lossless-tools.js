@@ -6,7 +6,7 @@
 //   3. 任何一步失败都不阻断主流程——原图照常上传，只是把原因告诉用户。
 //
 // 自动安装在 Windows 上：
-//   jpegtran ← libjpeg-turbo 官方安装包（静默装到 tools/libjpeg-turbo）
+//   jpegtran ← imagemin 托管的 libjpeg-turbo 免安装二进制（不触发管理员权限）
 //   oxipng   ← GitHub release 的 portable zip
 // macOS / Linux 只做 PATH 探测，缺失时明确提示用户自行安装。
 import { execFile } from 'node:child_process'
@@ -52,8 +52,8 @@ export async function findTool(name, workspaceDir) {
   return onPath(name)
 }
 
-async function download(url, dest) {
-  const response = await fetch(url, { redirect: 'follow' })
+async function download(url, dest, headers = {}) {
+  const response = await fetch(url, { redirect: 'follow', headers })
   if (!response.ok) throw new Error(`HTTP ${response.status}`)
   const buffer = Buffer.from(await response.arrayBuffer())
   await mkdir(dirname(dest), { recursive: true })
@@ -142,36 +142,26 @@ async function installOxipng(workspaceDir, logger) {
   return target
 }
 
-const LIBJPEG_VERSION = '3.2.1'
-
-function jpegtranInstallerUrl() {
-  const arm = process.arch === 'arm64'
-  return `https://github.com/libjpeg-turbo/libjpeg-turbo/releases/download/${LIBJPEG_VERSION}/libjpeg-turbo-${LIBJPEG_VERSION}-vc-${arm ? 'arm64' : 'x64'}.exe`
-}
+// imagemin 托管的 libjpeg-turbo 免安装二进制（win32 x64），不需要管理员权限。
+// 走 GitHub contents API 而不是 raw.githubusercontent.com，后者在国内经常连不上。
+const JPEGTRAN_BIN_VERSION = '7.0.0'
+const JPEGTRAN_BIN_BASE = 'https://api.github.com/repos/imagemin/jpegtran-bin/contents/vendor/win/x64'
+const GITHUB_RAW_HEADERS = { Accept: 'application/vnd.github.raw' }
 
 async function installJpegtran(workspaceDir, logger) {
   if (process.platform !== 'win32') {
     throw new Error('这台机器不是 Windows，暂不自动安装 jpegtran；请用系统包管理器安装 libjpeg-turbo（自带 jpegtran）')
   }
-  const dir = join(toolsDir(workspaceDir), 'libjpeg-turbo')
-  const installer = join(dir, 'libjpeg-turbo-setup.exe')
-  const url = jpegtranInstallerUrl()
-  logger?.(`下载 jpegtran（libjpeg-turbo 安装包）：${url}`)
-  await download(url, installer)
-  await mkdir(dir, { recursive: true })
-  // NSIS 静默安装：/S 静默，/D 指定目录（必须是最后一个参数且不加引号）
-  try {
-    await run(installer, ['/S', `/D=${dir}`], { windowsHide: true, timeout: 180000 })
-  } catch (error) {
-    throw new Error(`libjpeg-turbo 静默安装失败：${String(error?.message || error).slice(0, 200)}`)
-  }
-  const binary = await findFileFuzzy(dir, 'jpegtran.exe')
-  if (!binary) throw new Error('安装完成后没找到 jpegtran.exe')
-  const target = join(toolsDir(workspaceDir), `jpegtran${EXE}`)
-  const { copyFile, chmod } = await import('node:fs/promises')
-  await copyFile(binary, target)
+  const dir = toolsDir(workspaceDir)
+  const target = join(dir, `jpegtran${EXE}`)
+  const dllTarget = join(dir, 'libjpeg-62.dll')
+  const exeUrl = `${JPEGTRAN_BIN_BASE}/jpegtran.exe?ref=v${JPEGTRAN_BIN_VERSION}`
+  const dllUrl = `${JPEGTRAN_BIN_BASE}/libjpeg-62.dll?ref=v${JPEGTRAN_BIN_VERSION}`
+  logger?.(`下载 jpegtran（免安装版）：${exeUrl}`)
+  await download(exeUrl, target, GITHUB_RAW_HEADERS)
+  await download(dllUrl, dllTarget, GITHUB_RAW_HEADERS)
+  const { chmod } = await import('node:fs/promises')
   await chmod(target, 0o755).catch(() => {})
-  await rm(installer, { force: true }).catch(() => {})
   return target
 }
 

@@ -240,7 +240,10 @@ const isMain = (() => {
   }
 })()
 
-if (isMain || process.argv[1]?.endsWith('qingshi-mcp.mjs') || process.argv[1]?.endsWith('server.mjs')) {
+// 只有直接运行 server.mjs 时才自启 stdio。
+// 注意：不能再判断 qingshi-mcp.mjs —— bin 入口会 import 本文件并自己启动一次，
+// 两个 readline 同时读 stdin 会让每个请求被执行两遍（写记录会重复）。
+if (isMain || process.argv[1]?.endsWith('server.mjs')) {
   const { tools, instructions } = await loadTools()
   serveStdio(createServer({ tools, instructions }))
   process.stderr.write(`qingshi-mcp ready: ${tools.size} tools\n`)

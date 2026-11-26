@@ -97,8 +97,14 @@ export function createPhoneUpload({ workspaceDir, authed, openWindow, logger }) 
   .hint { font-size: 13px; color: #7d6a58; line-height: 1.7; margin-top: 12px; }
   .url { font-size: 12px; word-break: break-all; color: #8a7560; background: rgba(138,109,59,.06); padding: 10px 12px; border-radius: 10px; margin-top: 10px; }
   .grid { display: grid; grid-template-columns: repeat(auto-fill,minmax(86px,1fr)); gap: 10px; margin-top: 20px; }
-  .thumb { aspect-ratio: 1; border-radius: 10px; overflow: hidden; background: #efe3cf; border: 1px solid rgba(138,109,59,.1); }
+  .thumb { aspect-ratio: 1; border-radius: 10px; overflow: hidden; background: #efe3cf; border: 1px solid rgba(138,109,59,.1); cursor: zoom-in; }
   .thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .lightbox { position: fixed; inset: 0; z-index: 60; display: none; align-items: center; justify-content: center;
+    background: rgba(24,17,12,.9); padding: 24px; }
+  .lightbox.show { display: flex; }
+  .lightbox img { max-width: 94vw; max-height: 92vh; border-radius: 10px; box-shadow: 0 24px 70px rgba(0,0,0,.55); }
+  .lightbox-tip { position: absolute; left: 0; right: 0; bottom: 18px; text-align: center; font-size: 13px; color: rgba(255,248,237,.72); }
+  .closed { min-height: 100vh; display: flex; align-items: center; justify-content: center; font-size: 18px; color: #6f5647; }
   .empty { margin-top: 18px; padding: 26px; text-align: center; border: 1px dashed rgba(138,109,59,.24);
     border-radius: 14px; color: #9a8874; font-size: 13px; }
   .actions { display: flex; gap: 12px; margin-top: 24px; }
@@ -129,24 +135,74 @@ export function createPhoneUpload({ workspaceDir, authed, openWindow, logger }) 
   </div>
   <div class="foot">关闭本窗口不会中断上传；回到青史的对话里继续操作即可</div>
 </div></div>
+<div class="lightbox" id="lightbox"><img id="lightboxImg" alt="" /><div class="lightbox-tip">点击任意处关闭</div></div>
 <script>
 const STATUS_TEXT = { waiting:'等待扫码', uploading:'手机上传中', completed:'已传完', importing:'电脑整理中', done:'已归档', expired:'已过期', canceled:'已取消' };
-let lastCount = -1;
+let lastKeys = '';
+const thumbUrls = new Map();
 function render(data) {
   if (!data) return;
-  document.getElementById('statusText').textContent = STATUS_TEXT[data.status] || data.status || '等待中';
-  document.getElementById('count').textContent = (data.files || []).length;
-  document.getElementById('bytes').textContent = fmt((data.files || []).reduce((s,f)=>s+(f.file_size||0),0));
   const files = data.files || [];
+  document.getElementById('statusText').textContent = STATUS_TEXT[data.status] || data.status || '等待中';
+  document.getElementById('count').textContent = files.length;
+  document.getElementById('bytes').textContent = fmt(files.reduce((s,f)=>s+(f.file_size||0),0));
   document.getElementById('finishBtn').disabled = !files.length || data.status !== 'uploading' && data.status !== 'waiting';
-  document.getElementById('finishBtn').textContent = data.status === 'completed' ? '已传完，回对话继续' : '我已传完';
-  if (files.length) {
+  document.getElementById('finishBtn').textContent = (data.status === 'completed' || data.status === 'importing') ? '已传完，可关闭窗口' : '我已传完';
+  // 只有文件集合变化时才重建列表：每次轮询后端都会换发签名 URL，
+  // 若无条件重写 innerHTML，图片会每 2 秒重新加载一次。
+  const keys = files.map(f => f.object_key || f.file_name || '').join('|');
+  if (keys !== lastKeys) {
+    lastKeys = keys;
     const list = document.getElementById('list');
-    list.className = 'grid';
-    list.innerHTML = files.map(f => '<div class="thumb" title="'+(f.file_name||'')+'">'+(f.url?'<img src="'+f.url+'" />':'')+'</div>').join('');
+    if (files.length) {
+      list.className = 'grid';
+      list.innerHTML = files.map(f => {
+        const key = f.object_key || f.file_name || '';
+        if (!thumbUrls.has(key) && f.url) thumbUrls.set(key, f.url);
+        const src = thumbUrls.get(key) || f.url || '';
+        return '<div class="thumb" title="'+(f.file_name||'')+'">'+(src?'<img src="'+src+'" loading="lazy" />':'')+'</div>';
+      }).join('');
+    } else {
+      list.className = 'empty';
+      list.textContent = '还没有收到照片';
+    }
   }
-  if (data.status === 'done') document.getElementById('hint').textContent = '照片已经归档到生涯，临时区已清理。';
-  if (data.status === 'completed') document.getElementById('hint').textContent = '照片已到齐，回到青史对话里继续分类归档。';
+  // completed 之后，桌面端一查状态后端就会转成 importing，所以两者都算「上传完成」；
+  // done 也沿用同一个 3 分钟倒计时，只是文案改成「已归档」。
+  if (data.status === 'completed' || data.status === 'importing' || data.status === 'done') {
+    if (data.status === 'done') archived = true;
+    startAutoClose();
+  } else {
+    stopAutoClose();
+    archived = false;
+  }
+}
+let autoCloseAt = 0;
+let autoCloseTimer = null;
+let archived = false;
+function stopAutoClose(){
+  if (autoCloseTimer) { clearInterval(autoCloseTimer); autoCloseTimer = null; }
+  autoCloseAt = 0;
+}
+function startAutoClose(){
+  if (!autoCloseAt) {
+    autoCloseAt = Date.now() + 180000;
+    autoCloseTimer = setInterval(tickAutoClose, 1000);
+  }
+  tickAutoClose();
+}
+function tickAutoClose(){
+  const left = Math.max(0, autoCloseAt - Date.now());
+  if (left <= 0) {
+    stopAutoClose();
+    try { window.close(); } catch (e) {}
+    setTimeout(() => { document.body.innerHTML = '<div class="closed">已上传完成，可以关闭本窗口了。</div>'; }, 400);
+    return;
+  }
+  const m = Math.floor(left / 60000);
+  const s = Math.floor((left % 60000) / 1000);
+  const hint = document.getElementById('hint');
+  if (hint) hint.textContent = (archived ? '照片已归档' : '手机已上传完成') + '，本窗口可以关闭；将在 ' + m + ':' + String(s).padStart(2,'0') + ' 后自动关闭。';
 }
 function fmt(n){ if(n>=1048576) return (n/1048576).toFixed(1)+'MB'; if(n>=1024) return Math.ceil(n/1024)+'KB'; return n+'B'; }
 async function poll(){
@@ -159,6 +215,18 @@ async function act(path){
 }
 document.getElementById('finishBtn').addEventListener('click', ()=>act('/api/finish'));
 document.getElementById('cancelBtn').addEventListener('click', ()=>{ if (confirm('确定取消这次上传？临时区会被清空。')) act('/api/cancel'); });
+const lightbox = document.getElementById('lightbox');
+const lightboxImg = document.getElementById('lightboxImg');
+function closeLightbox(){ lightbox.classList.remove('show'); lightboxImg.removeAttribute('src'); }
+document.getElementById('list').addEventListener('click', (event) => {
+  const thumb = event.target.closest ? event.target.closest('.thumb') : null;
+  const img = thumb && thumb.querySelector('img');
+  if (!img || !img.src) return;
+  lightboxImg.src = img.src;
+  lightbox.classList.add('show');
+});
+lightbox.addEventListener('click', closeLightbox);
+document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeLightbox(); });
 poll(); setInterval(poll, 2000);
 </script></body></html>`
   }
@@ -306,10 +374,10 @@ poll(); setInterval(poll, 2000);
     if (!current.ok) return { ok: false, message: current.message }
     const statusText = current.status
     if (statusText === 'waiting') {
-      return { ok: false, message: '手机还没有开始上传照片。让用户在手机上扫码选照片，选完点「完成」。' }
+      return { ok: false, message: '手机还未上传完毕：还没有扫码上传照片。请在手机上选好照片，并在手机上或电脑确认窗点击「上传完成」，然后再开始整理。' }
     }
     if (statusText === 'uploading') {
-      return { ok: false, message: `手机还在上传（已收到 ${current.files.length} 张）。等手机上点「完成」后，再调 qingshi_phone_upload_status 确认，然后才 pick。` }
+      return { ok: false, message: `手机还未上传完毕（已收到 ${current.files.length} 张）。请在手机上或电脑确认窗点击「上传完成」，然后再开始整理。` }
     }
     if (!['completed', 'importing'].includes(statusText)) {
       return { ok: false, message: `这次上传已经结束（状态：${statusText}），不能再取照片。需要重新发起就再调 start。` }
