@@ -12,7 +12,8 @@
 
 ### 修复
 
-- **HEIC 支持**：上传前自动把 iPhone 的 HEIC/HEIF 转成 JPG，再走与小程序 / H5 完全相同的三步上传（后端已允许 heic，但小程序和浏览器显示不了，所以插件仍默认转 JPG）。解码按 `sips`（macOS）→ Windows WIC（需系统装「HEIF 图像扩展」）→ `heif-convert` → `magick` → `ffmpeg` 依次尝试，全失败时给出可执行的安装提示；临时 JPG 在上传结束（成功或失败）后自动清理。
+- **HEIC 支持**：后端不支持 heic/heif，收到会明确提示「请先转成 JPG」。插件在上传前自动把 HEIC/HEIF 转成 JPG，再走与小程序 / H5 完全相同的三步上传。解码按 `sips`（macOS）→ Windows WIC（需系统装「HEIF 图像扩展」）→ `heif-convert` → `magick` → `ffmpeg` 依次尝试，全失败时给出可执行的安装提示；临时 JPG 在上传结束（成功或失败）后自动清理。
+- 插件转换前会**先按文件名识别拍摄时间**（`IMG_20230815_091233.HEIC`、`mmexport1692000000000` 等）：转换器没带出 EXIF 时间时，把它写进 JPG 的 `DateTime` / `DateTimeOriginal`，并把文件修改时间也设为拍摄时间，保证后续分组和入库时间正确。
 - **新增 `scripts/heic2jpg.py`**：批量/离线把 HEIC 转 JPG，**完整保留 EXIF**（拍摄时间 DateTimeOriginal、GPS 经纬度、机型、镜头），`--keep-time` 还能把输出文件的修改时间设为拍摄时间。依赖 `pip install pillow-heif`，已用含 GPS 的真实 HEIC 验证：转换后拍摄时间、机型、GPS 全部一致。
 - 图片上传严格对齐青史标准上传链路（小程序 / H5 的 `utils/upload.js` 与后端 `validate_single_upload_request`），保证三端同一套逻辑：
   - 签名请求补齐 `custom_object_key`，字段命名与前端一致：`biz_type / of_uid / target_type / custom_object_key / file_name / file_size / content_type`

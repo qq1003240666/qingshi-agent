@@ -162,8 +162,8 @@ export function createUploader({ logger } = {}) {
     } = options
 
     // HEIC：始终先转成 JPG 再走标准三步。
-    // 后端现在已经允许 heic，但微信小程序和浏览器显示不了 HEIC，
-    // 所以插件这边仍然默认转成 jpg，让三端看到的都是普通图片。
+    // 后端不支持 heic（收到会明确提示用户）。插件在上传前转成 jpg，
+    // 并优先从文件名读出拍摄时间写进 JPG，避免时间信息丢失。
     let cleanup = null
     let preparedPath = filePath
     let preparedName = fileName
@@ -179,7 +179,11 @@ export function createUploader({ logger } = {}) {
       preparedName = jpegNameFor(fileName || filePath)
       preparedType = 'image/jpeg'
       convertedFrom = filePath
-      logger?.(`HEIC 已转 JPG（${converted.strategy}）：${filePath}`)
+      logger?.(
+        `HEIC 已转 JPG（${converted.strategy}` +
+          (converted.takenAt ? ` · 拍摄时间 ${converted.takenAt}（来源：${converted.timeSource}）` : '') +
+          `）：${filePath}`,
+      )
     }
 
     try {

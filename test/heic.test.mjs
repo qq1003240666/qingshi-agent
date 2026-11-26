@@ -1,12 +1,13 @@
 // HEIC 上传：检测、转 JPG、再走标准三步。
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { mkdtemp, writeFile, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, writeFile, readFile, rm, stat } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 
 import { isHeicFile, convertHeicToJpeg, jpegNameFor } from '../packages/core/lib/heic.js'
 import { createUploader } from '../packages/core/lib/upload.js'
+import { readMeta } from '../packages/core/lib/exif.js'
 
 const tmp = (tag) => mkdtemp(join(tmpdir(), `qingshi-heic-${tag}-`))
 
@@ -75,8 +76,35 @@ test('HEIC 转换：校验输出必须是真 JPEG，并能清理临时文件', a
   }
 })
 
-test('HEIC 转换失败：给出可执行的提示', async () => {
-  const dir = await tmp('fail')
+test('文件名里有时间：转换后写进 JPG 的 EXIF 和文件时间', async () => {
+  const dir = await tmp('name-time')
+  const input = join(dir, 'IMG_20230815_091233.HEIC')
+  await writeFile(input, fakeHeic())
+  const strategies = [
+    { name: 'fake', run: async (_input, output) => writeFile(output, fakeJpeg()) },
+  ]
+  try {
+    const converted = await convertHeicToJpeg(input, { strategies })
+    try {
+      const meta = await readMeta(converted.path)
+      assert.equal(meta.timeSource, 'exif')
+      assert.equal(meta.takenAt, '2023-08-15T09:12:33')
+      assert.equal(converted.takenAt, '2023-08-15T09:12:33')
+      assert.equal(converted.timeSource, 'filename')
+
+      const info = await stat(converted.path)
+      assert.equal(info.mtime.getFullYear(), 2023)
+      assert.equal(info.mtime.getMonth() + 1, 8)
+      assert.equal(info.mtime.getDate(), 15)
+    } finally {
+      await converted.cleanup()
+    }
+  } finally {
+    await rm(dir, { recursive: true, force: true })
+  }
+})
+
+test('HEIC 转换失败：给出可执行的提示', async () => {  const dir = await tmp('fail')
   try {
     const input = join(dir, 'IMG_0002.heic')
     await writeFile(input, fakeHeic())

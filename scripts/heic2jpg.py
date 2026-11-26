@@ -2,8 +2,8 @@
 # -*- coding: utf-8 -*-
 """HEIC/HEIF → JPG，保留拍摄时间和 GPS 位置。
 
-为什么需要它：iPhone 默认存 HEIC。后端现在允许 heic，但微信小程序和浏览器
-仍然显示不了 HEIC，所以入库前通常要转成 JPG。这个脚本保证转换后
+为什么需要它：iPhone 默认存 HEIC，而后端不支持 heic/heif（会提示先转 JPG），
+微信小程序和浏览器也显示不了 HEIC。这个脚本保证转换后
 EXIF 原样保留——拍摄时间（DateTimeOriginal）、GPS 经纬度/海拔、机型、镜头都不丢。
 
 依赖：
