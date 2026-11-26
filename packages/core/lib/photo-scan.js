@@ -13,15 +13,17 @@ export const MEDIA_EXTS = new Set([
 
 /**
  * 收集路径下的媒体文件。paths 可以是文件或文件夹（递归）。
- * 返回 { files, skipped, truncated }。
+ * offset/maxMedia 用来分页，保证「全部照片」都能遍历完。
+ * 返回 { files, skipped, truncated, found }。
  */
-export async function collectMedia(paths, { maxMedia = 300, maxDepth = 6 } = {}) {
-  const files = []
+export async function collectMedia(paths, { maxMedia = 300, maxDepth = 6, offset = 0 } = {}) {
+  const found = []
   const skipped = []
+  const want = Math.max(0, offset) + Math.max(1, maxMedia)
   let truncated = false
 
   async function walk(target, depth) {
-    if (files.length >= maxMedia) {
+    if (found.length >= want) {
       truncated = true
       return
     }
@@ -46,29 +48,37 @@ export async function collectMedia(paths, { maxMedia = 300, maxDepth = 6 } = {})
       }
       entries.sort((a, b) => a.name.localeCompare(b.name))
       for (const entry of entries) {
-        if (files.length >= maxMedia) {
+        if (found.length >= want) {
           truncated = true
           return
         }
         if (entry.name.startsWith('.')) continue
         if (entry.isDirectory()) await walk(resolve(target, entry.name), depth + 1)
         else if (entry.isFile() && MEDIA_EXTS.has(extname(entry.name).toLowerCase())) {
-          files.push(resolve(target, entry.name))
+          found.push(resolve(target, entry.name))
         }
       }
       return
     }
-    if (st.isFile() && MEDIA_EXTS.has(extname(target).toLowerCase())) files.push(target)
+    if (st.isFile() && MEDIA_EXTS.has(extname(target).toLowerCase())) found.push(target)
   }
 
   for (const p of paths) await walk(resolve(String(p)), 0)
-  return { files: files.slice(0, maxMedia), skipped, truncated }
+  const files = found.slice(offset, offset + maxMedia)
+  return { files, skipped, truncated: truncated || found.length > offset + files.length, found: found.length }
 }
 
 /** 扫描 + 聚类。events 传进来时顺便算出「和哪条已有记录可能是一件事」。 */
 export async function scanMedia(paths, options = {}) {
-  const { maxMedia = 300, gapMinutes = 120, gpsKm = 5, events = [] } = options
-  const collected = await collectMedia(paths, { maxMedia })
+  const {
+    maxMedia = 300,
+    offset = 0,
+    gapMinutes = 180,
+    gpsKm = 2,
+    events = [],
+    resolvePlace = null,
+  } = options
+  const collected = await collectMedia(paths, { maxMedia, offset })
   const items = []
   const skipped = [...collected.skipped]
 
@@ -82,41 +92,68 @@ export async function scanMedia(paths, options = {}) {
   items.sort((a, b) => a.takenAtMs - b.takenAtMs)
 
   const sessions = clusterSessions(items, { gapMinutes, gpsKm })
-  for (const session of sessions) session.candidates = matchEvents(session, events)
+  for (const session of sessions) {
+    session.bytes = session.photos.reduce((sum, photo) => sum + (photo.bytes || 0), 0)
+    session.candidates = matchEvents(session, events)
+    if (resolvePlace && session.gps) {
+      try {
+        const place = await resolvePlace(session.gps.lat, session.gps.lon)
+        if (place && (place.name || place.address)) session.place = place
+      } catch {
+        // 地名反查失败不影响主流程，继续用坐标
+      }
+    }
+  }
 
   return {
     items,
     sessions,
     skipped,
     truncated: collected.truncated,
-    total: collected.files.length,
+    total: items.length,
+    totalBytes: items.reduce((sum, photo) => sum + (photo.bytes || 0), 0),
+    nextOffset: collected.truncated ? offset + collected.files.length : 0,
     paths,
   }
 }
 
-/** 相邻两张：时间差超过 gapMinutes，或 GPS 距离超过 gpsKm，就切成新场次。 */
-export function clusterSessions(items, { gapMinutes = 120, gpsKm = 5 } = {}) {
+/**
+ * 地点 + 时间一起判断：相邻两张时间差超过 gapMinutes，
+ * 或新照片离当前场次的「地点中心」超过 gpsKm，就切成新场次。
+ * 用中心点而不是上一张，是为了「在同一个地方来回拍」不会被切成好几段。
+ */
+export function clusterSessions(items, { gapMinutes = 180, gpsKm = 2 } = {}) {
   const gapMs = Math.max(1, gapMinutes) * 60 * 1000
   const maxKm = gpsKm <= 0 ? Infinity : gpsKm
   const sessions = []
   let current = null
+  let centroid = null
+  let located = 0
+  let last = null
 
   for (const item of items) {
-    const last = current?.photos[current.photos.length - 1]
     let startNew = !current
     if (!startNew) {
       if (item.takenAtMs - last.takenAtMs > gapMs) startNew = true
-      else if (item.gps && last.gps) {
-        const km = haversineKm(last.gps, item.gps)
-        if (km > maxKm) startNew = true
-      }
+      else if (item.gps && centroid && haversineKm(centroid, item.gps) > maxKm) startNew = true
     }
     if (startNew) {
       current = { photos: [], start: item.takenAt, end: item.takenAt, gps: item.gps || null }
       sessions.push(current)
+      centroid = item.gps ? { ...item.gps } : null
+      located = item.gps ? 1 : 0
+    } else if (item.gps) {
+      located += 1
+      centroid = {
+        lat: (centroid.lat * (located - 1) + item.gps.lat) / located,
+        lon: (centroid.lon * (located - 1) + item.gps.lon) / located,
+      }
+      current.gps = { lat: round6(centroid.lat), lon: round6(centroid.lon) }
     }
+    if (!current.gps && !centroid && item.gps) current.gps = item.gps
     current.photos.push(item)
     current.end = item.takenAt
+    last = item
   }
   return sessions
 }
@@ -162,6 +199,8 @@ export function matchEvents(session, events = [], { days = 7, nearKm = 30 } = {}
 
 const rank = (c) => ({ high: 3, medium: 2, low: 1 }[c] || 0)
 
+export const round6 = (n) => Math.round(n * 1e6) / 1e6
+
 export function haversineKm(a, b) {
   const R = 6371
   const toRad = (d) => (d * Math.PI) / 180
@@ -190,7 +229,9 @@ export function formatScan(result, { detail = false, limitPerSession = 20 } = {}
   for (const item of items) bySource[item.timeSource] = (bySource[item.timeSource] || 0) + 1
 
   const lines = []
-  lines.push(`照片扫描：${items.length} 个文件 / ${sessions.length} 个拍摄场次`)
+  lines.push(
+    `照片扫描：${items.length} 个文件 / ${sessions.length} 个拍摄场次 / 共 ${formatBytes(result.totalBytes || 0)}`,
+  )
   lines.push(
     `拍摄时间来源：EXIF ${bySource.exif} 个 · 文件名 ${bySource.filename} 个 · 文件修改时间 ${bySource.mtime} 个`,
   )
@@ -200,8 +241,13 @@ export function formatScan(result, { detail = false, limitPerSession = 20 } = {}
 
   sessions.forEach((session, index) => {
     const range = formatRange(session.start, session.end)
-    const gps = session.gps ? ` · GPS ${session.gps.lat},${session.gps.lon}` : ' · 无 GPS'
-    lines.push(`[${index + 1}] ${range} · ${session.photos.length} 张${gps}`)
+    const place = session.place ? ` · ${session.place.name || session.place.address}` : ''
+    const gps = session.gps
+      ? ` · GPS ${session.gps.lat},${session.gps.lon}${place}`
+      : ' · 无 GPS'
+    lines.push(
+      `[${index + 1}] ${range} · ${session.photos.length} 张 · ${formatBytes(session.bytes || 0)}${gps}`,
+    )
 
     const shown = detail ? session.photos : session.photos.slice(0, limitPerSession)
     for (const photo of shown) {
@@ -225,11 +271,24 @@ export function formatScan(result, { detail = false, limitPerSession = 20 } = {}
     lines.push('')
   })
 
+  if (result.nextOffset) {
+    lines.push(`还有更多照片没扫：再调一次，offset 传 ${result.nextOffset}，直到返回里不再出现这一行。`)
+    lines.push('')
+  }
+
   if (skipped.length) {
     lines.push(`跳过的 ${skipped.length} 项：${skipped.slice(0, 5).join('；')}`)
     if (skipped.length > 5) lines.push('（其余略）')
   }
   return lines.join('\n').trim()
+}
+
+export function formatBytes(bytes) {
+  const n = Number(bytes) || 0
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`
 }
 
 function formatRange(start, end) {

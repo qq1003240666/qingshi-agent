@@ -346,6 +346,31 @@ export function createCareerApi({ authed, workspaceDir, logger }) {
     return { ok: true, code: 200, data: result.data ?? result, message: result.message || '' }
   }
 
+  // 云空间额度：上传前先看还剩多少，避免传到一半被后端拒
+  // 后端 /get_user_storage_quota 返回的 remaining_bytes 只扣了 used，没扣 reserved，
+  // 这里把预留也扣掉，给用户一个更保守的「还能传多少」。
+  async function getStorageQuota() {
+    const result = await authed('/get_user_storage_quota', {})
+    if (result.code !== 200) {
+      return { ok: false, code: result.code, message: result.message || '读取存储额度失败' }
+    }
+    const data = result.data && typeof result.data === 'object' ? result.data : {}
+    const num = (key) => Math.max(Number(data[key]) || 0, 0)
+    const limit = num('storage_limit_bytes')
+    const used = num('used_bytes')
+    const reserved = num('reserved_bytes')
+    return {
+      ok: true,
+      code: 200,
+      limit,
+      used,
+      reserved,
+      remaining: Math.max(limit - used - reserved, 0),
+      usagePercent: limit ? Math.round((used / limit) * 1000) / 10 : 0,
+      data,
+    }
+  }
+
   return {
     getEvent,
     setPrivacy,
@@ -359,6 +384,7 @@ export function createCareerApi({ authed, workspaceDir, logger }) {
     approveFamilyMessage,
     familyInviteQrcode,
     allFamilyLayers,
+    getStorageQuota,
     trashDir,
   }
 }

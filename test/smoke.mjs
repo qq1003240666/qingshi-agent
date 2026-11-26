@@ -36,7 +36,7 @@ check('导出 inject', Array.isArray(mod.inject) && mod.inject.includes('tools')
 
 await mod.apply(ctx, { openLoginWindow: false, autoOpenBrowser: false, workspaceDir: process.env.QINGSHI_TEST_WORKSPACE || './.tmp-test-workspace' })
 
-check('工具数量 37', registered.size === 37, '实际 ' + registered.size)
+check('工具数量 39', registered.size === 39, '实际 ' + registered.size)
 for (const name of TOOL_NAMES) check('注册 ' + name, registered.has(name))
 
 for (const [name, tool] of registered) {

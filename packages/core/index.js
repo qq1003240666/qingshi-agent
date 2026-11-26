@@ -30,10 +30,11 @@ import { openInWindow } from './lib/open-browser.js'
 import { PAGES, findPages, pageUrl, pageBrief } from './lib/pages-map.js'
 import { installWindowBar } from './lib/window-bar.js'
 import { createCareerApi } from './lib/career-api.js'
-import { scanMedia, formatScan } from './lib/photo-scan.js'
+import { scanMedia, formatScan, formatBytes } from './lib/photo-scan.js'
+import { createGeocoder } from './lib/geo.js'
 import { createUserCache } from './lib/users.js'
 import { setHost, setClientInfo, resolveClientLabel, appendAttribution } from './lib/attribution.js'
-import { readFile, writeFile, readdir } from 'node:fs/promises'
+import { readFile, writeFile, readdir, stat } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
@@ -341,6 +342,8 @@ export function apply(ctx, config = {}) {
   // 本地草稿箱（发布时才上传云端）
   const drafts = createDraftStore(cfg.workspaceDir)
   const uploadMedia = createUploader({ logger: (line) => ctx.logger?.debug?.(line) })
+  // 经纬度 → 地名（高德配了 key 就用高德，否则用 Photon；都失败就只显示坐标）
+  const geocoder = createGeocoder({ logger: (line) => ctx.logger?.debug?.(line) })
   // 生涯事件的读写（/get_event、/edit_event、/delete_event、/get_career_list、族谱）
   const careerApi = createCareerApi({
     authed,
@@ -1042,10 +1045,14 @@ export function apply(ctx, config = {}) {
     '  确认后用 qingshi_prepare_event 把内容预填进「添加生涯事件」页面并打开，让用户自己补图片/地点、自己点「发布」。',
     '  这是最推荐的方式：既省了打字，又把最终确认权留给用户。',
     '  只有用户明确说“直接记到云端、不用我确认”时才用 qingshi_record；只暂存不问云端时才用 qingshi_draft。',
-    '- 用户丢来一堆照片 / 给一个相册目录（“帮我整理这些照片”“这些都是那次旅行拍的”“按时间分一下”）→ ' +
-      '先 qingshi_photo_scan 拿拍摄时间和场次（有候选记录会一起给出）；' +
-      '你自己看几张有代表性的照片确认内容，再逐场次提议：挂到已有记录用 qingshi_edit 带 imagePaths，' +
-      '新建用 qingshi_draft 带 imagePaths、startDate 用 EXIF 里的日期；不要一次性写很多条，先给用户看分组结果；',
+    '- 照片整理（用户丢来一堆照片 / 给相册目录，说“帮我整理一下这些照片到青史”“按时间分一下”）→ 严格按这个顺序：',
+    '  ① qingshi_photo_scan 扫描（一次没扫完就带 offset 继续扫，直到不再出现「还有更多照片没扫」），拿到按拍摄时间排序的场次；',
+    '  ② 先按时间把场次列给用户看：每组的时间、张数、地点、总大小；先别下结论、别急着写；',
+    '  ③ 如果当前模型能读图，逐组看几张有代表性的照片，按照片内容起标题、写正文、选标签（标签清单用 qingshi_tags 查）；读不了图就按时间和地点命名，并明确告诉用户「我看不到照片内容，标题先按时间地点起」；',
+    '  ④ 告诉用户「这些照片准备这样存到青史」并给出每组的标题 / 正文 / 日期，等用户确认；',
+    '  ⑤ 用户确认后调 qingshi_photo_save：先不带 confirm 拿预览（会自动算出总大小），再带 confirm=true 真正上传；它上传前会核对云空间额度，额度不够会整体拒绝——不要绕过、不要分批硬传，直接告诉用户还差多少；',
+    '  ⑥ 某个场次如果和已有记录是同一次（qingshi_photo_scan 会给出候选），改用 qingshi_edit 带 imagePaths 追加图片，不要新建重复记录；',
+    '  ⑦ 全部处理完，逐组告诉用户结果：成功几条、失败几条、各自的 event_id；',
     '- 记录自己的故事 / 感悟（“帮我记一笔”“今天……”）→ qingshi_draft 记成本地草稿，等用户确认再发布；',
     '  感悟类 eventTag 用 idea（想法）、summary（总结）、turning（转折）或 record（记录）。',
     '- 给家人记录 → 同样先 qingshi_draft（带 targetUid），但代家人写默认关闭，需要用户明确同意。',
@@ -2061,10 +2068,14 @@ export function apply(ctx, config = {}) {
           required: true,
           description: '照片文件夹或单个文件的路径，可以传多个；文件夹会递归扫描',
         },
-        maxPhotos: { type: 'number', description: '最多扫描多少个文件，默认 300，上限 2000' },
+        maxPhotos: { type: 'number', description: '每页最多扫描多少个文件，默认 300，上限 2000' },
+        offset: {
+          type: 'number',
+          description: '从第几个文件开始扫（分页用）。上一次返回里出现「还有更多照片没扫」时，把它给的 offset 传回来',
+        },
         gapMinutes: {
           type: 'number',
-          description: '相邻两张间隔超过多少分钟就算新的场次，默认 120（两小时）',
+          description: '相邻两张间隔超过多少分钟就算新的场次，默认 180（三小时）',
         },
         matchEvents: {
           type: 'boolean',
@@ -2073,6 +2084,10 @@ export function apply(ctx, config = {}) {
         detail: {
           type: 'boolean',
           description: '是否列出每场次的所有照片；默认每个场次只列前 20 张',
+        },
+        withPlace: {
+          type: 'boolean',
+          description: '是否把 GPS 反查成地名（默认 true，最多查前 12 个场次；离线时自动只用坐标）',
         },
       },
       output: outputSpec,
@@ -2088,7 +2103,10 @@ export function apply(ctx, config = {}) {
           return Math.min(max, Math.max(min, Math.round(n)))
         }
         const maxMedia = toInt(args?.maxPhotos, 1, 2000, 300)
-        const gapMinutes = toInt(args?.gapMinutes, 5, 24 * 60, 120)
+        const offset = toInt(args?.offset, 0, 1000000, 0)
+        const gapMinutes = toInt(args?.gapMinutes, 5, 24 * 60, 180)
+        const resolvePlace =
+          args?.withPlace === false ? null : (lat, lon) => geocoder.reverse(lat, lon)
 
         let events = []
         let tail = ''
@@ -2103,8 +2121,220 @@ export function apply(ctx, config = {}) {
           }
         }
 
-        const result = await scanMedia(paths, { maxMedia, gapMinutes, events })
+        const result = await scanMedia(paths, { maxMedia, offset, gapMinutes, events, resolvePlace })
         return formatScan(result, { detail: args?.detail === true }) + tail
+      },
+    }),
+  )
+
+  // ---------- qingshi_storage ----------
+  ctx.tools.register(
+    defineTool({
+      name: 'qingshi_storage',
+      description:
+        '查看青史云空间额度：总量 / 已用 / 预留 / 剩余 / 使用率。' +
+        '上传照片前先调它确认还剩多少；传 requiredBytes 时直接回答「这次够不够」。',
+      parameters: {
+        requiredBytes: {
+          type: 'number',
+          description: '这次准备上传多少字节（照片总大小）；传了就顺带判断够不够',
+        },
+      },
+      output: outputSpec,
+      async execute(args) {
+        const info = await ensureLoggedIn()
+        if (!info.loggedIn) return needLoginText(info)
+        const quota = await careerApi.getStorageQuota()
+        if (!quota.ok) return `读取存储额度失败：${quota.code} ${quota.message || ''}`
+
+        const lines = [
+          `云空间：已用 ${formatBytes(quota.used)} / 总量 ${formatBytes(quota.limit)}（${quota.usagePercent}%）`,
+          `剩余可用：${formatBytes(quota.remaining)}` +
+            (quota.reserved ? `（另有 ${formatBytes(quota.reserved)} 正在上传占用）` : ''),
+        ]
+        const need = Number(args?.requiredBytes) || 0
+        if (need > 0) {
+          lines.push(
+            need <= quota.remaining
+              ? `这次要传 ${formatBytes(need)}：够。`
+              : `这次要传 ${formatBytes(need)}：不够，还差 ${formatBytes(need - quota.remaining)}。可以少选一些照片，或先在青史「存储相册 / 扩容」里购买或兑换额度。`,
+          )
+        }
+        if (quota.limit === 0) lines.push('注意：当前账户还没有可用空间额度，需要先扩容才能上传图片。')
+        return lines.join('\n')
+      },
+    }),
+  )
+
+  // ---------- qingshi_photo_save ----------
+  ctx.tools.register(
+    defineTool({
+      name: 'qingshi_photo_save',
+      description:
+        '把整理好的照片分组写入青史：一组 = 一条生涯记录（标题/正文/时间/地点/标签 + 图片）。' +
+        '必须分两步：① 先不传 confirm 调一次，拿到预览（每组标题、时间、张数、总大小、额度是否够）给用户确认；' +
+        '② 用户明确同意后再传 confirm=true，这时才真正上传图片并写入。' +
+        '上传前会自动核对云空间额度，不够就整体拒绝，不会传一半。会遍历所有分组，逐组报告结果。',
+      parameters: {
+        items: {
+          type: 'array',
+          required: true,
+          description: '照片分组；每一组生成一条生涯记录',
+          items: {
+            type: 'object',
+            properties: {
+              title: { type: 'string', required: true, description: '标题（按照片内容起名）' },
+              content: { type: 'string', description: '正文（按照片内容写，保留用户的说法）' },
+              startDate: { type: 'string', description: '拍摄日期，YYYY-MM-DD 或 YYYY-MM-DD HH:mm' },
+              eventTag: { type: 'string', description: '事件标签，默认 record' },
+              locationName: { type: 'string', description: '地点名称' },
+              locationAddress: { type: 'string', description: '地点地址' },
+              latitude: { type: 'number', description: '纬度' },
+              longitude: { type: 'number', description: '经度' },
+              imagePaths: {
+                type: 'array',
+                items: { type: 'string' },
+                description: '这一组要上传的图片绝对路径',
+              },
+            },
+          },
+        },
+        confirm: {
+          type: 'boolean',
+          description: '只有用户明确确认「保存」之后才传 true；不传或 false 只返回预览',
+        },
+      },
+      output: outputSpec,
+      async execute(args) {
+        const info = await ensureLoggedIn()
+        if (!info.loggedIn) return needLoginText(info)
+
+        const rawItems = Array.isArray(args?.items) ? args.items : []
+        if (!rawItems.length) return '没有要保存的分组。'
+
+        const items = []
+        const problems = []
+        for (const [index, raw] of rawItems.entries()) {
+          const item = raw && typeof raw === 'object' ? raw : {}
+          const title = String(item.title || '').trim()
+          if (!title) {
+            problems.push(`第 ${index + 1} 组没有标题，已跳过。`)
+            continue
+          }
+          const imagePaths = Array.isArray(item.imagePaths)
+            ? item.imagePaths.map((file) => String(file || '').trim()).filter(Boolean)
+            : []
+          let bytes = 0
+          const usable = []
+          for (const file of imagePaths) {
+            try {
+              const fileStat = await stat(file)
+              if (!fileStat.isFile()) throw new Error('不是文件')
+              bytes += fileStat.size
+              usable.push(file)
+            } catch (error) {
+              problems.push(`${title}：图片 ${file} 读不到（${error.code || error.message}），已跳过这张`)
+            }
+          }
+          items.push({
+            title,
+            content: String(item.content || '').trim(),
+            startDate: String(item.startDate || '').trim(),
+            eventTag: String(item.eventTag || 'record').trim() || 'record',
+            location: {
+              name: String(item.locationName || '').trim(),
+              address: String(item.locationAddress || '').trim(),
+              latitude: Number(item.latitude) || 0,
+              longitude: Number(item.longitude) || 0,
+            },
+            imagePaths: usable,
+            bytes,
+          })
+        }
+        if (!items.length) return ['没有可保存的分组。', ...problems].join('\n')
+
+        const totalBytes = items.reduce((sum, item) => sum + item.bytes, 0)
+        const quota = await careerApi.getStorageQuota()
+        const quotaLine = quota.ok
+          ? `云空间：剩余 ${formatBytes(quota.remaining)}，这次要传 ${formatBytes(totalBytes)}`
+          : `云空间额度读取失败（${quota.code} ${quota.message || ''}）`
+
+        // 第一步：预览
+        if (args?.confirm !== true) {
+          const lines = [`（预览，还没上传、没写入）准备写 ${items.length} 条记录：`]
+          items.forEach((item, index) => {
+            const date = item.startDate || '（未给时间，会记为今天）'
+            lines.push(
+              `[${index + 1}] ${item.title} · ${date} · ${item.imagePaths.length} 张 / ${formatBytes(item.bytes)}`,
+            )
+            if (item.location.name || item.location.address) {
+              lines.push(`    地点：${item.location.name}${item.location.address && item.location.address !== item.location.name ? '（' + item.location.address + '）' : ''}`)
+            }
+            const brief = item.content ? item.content.slice(0, 60) + (item.content.length > 60 ? '…' : '') : '（空）'
+            lines.push(`    正文：${brief}`)
+          })
+          lines.push('', quotaLine)
+          if (quota.ok && totalBytes > quota.remaining) {
+            lines.push(`额度不够：还差 ${formatBytes(totalBytes - quota.remaining)}，这时不能保存。`)
+          }
+          if (problems.length) lines.push('', ...problems)
+          lines.push('', '用户确认后，再调一次 qingshi_photo_save，这次传 confirm=true。')
+          return lines.join('\n')
+        }
+
+        // 第二步：真正写入，先卡额度
+        if (!quota.ok) {
+          return `上传前必须先确认存储额度，但现在读不到：${quota.code} ${quota.message || ''}。先修好再试。`
+        }
+        if (totalBytes > quota.remaining) {
+          return [
+            `已拒绝上传：这次要传 ${formatBytes(totalBytes)}，但云空间只剩 ${formatBytes(quota.remaining)}，还差 ${formatBytes(totalBytes - quota.remaining)}。`,
+            '没有上传任何文件。可以少选一些照片，或先在青史的「存储相册 / 扩容」里购买或兑换额度。',
+          ].join('\n')
+        }
+
+        const results = []
+        for (const [index, item] of items.entries()) {
+          const media = []
+          const failed = []
+          for (const file of item.imagePaths) {
+            try {
+              media.push(await uploadMedia(authed, file, { uid: info.uid }))
+            } catch (error) {
+              failed.push(`${file}（${error.message}）`)
+            }
+          }
+
+          const payload = {
+            of_type: 'user',
+            of_id: info.uid,
+            title: item.title,
+            content: appendAttribution(item.content, resolveClientLabel(cfg)),
+            start_date: item.startDate || todayText(),
+            event_tag: item.eventTag,
+          }
+          if (item.location.name || item.location.address) payload.location = item.location
+          if (media.length) payload.media_list = media
+
+          const added = await authed('/add_event', payload)
+          if (added.code === 200) {
+            const eventId = added.event_id || pick(added.data, 'event_id', 'eventId') || ''
+            results.push(
+              `[${index + 1}] 已写入：${item.title}${eventId ? `（event_id: ${eventId}）` : ''} · ${media.length} 张`,
+            )
+            if (failed.length) results.push(`    有 ${failed.length} 张没传成功：${failed.join('；')}`)
+          } else {
+            results.push(`[${index + 1}] 写入失败：${item.title} · ${added.code} ${added.message || ''}`)
+          }
+        }
+
+        return [
+          `已处理 ${items.length} 组：`,
+          ...results,
+          '',
+          quotaLine,
+          '注意：这些记录默认是「所有人可见」。要改成仅自己可见，可以用 qingshi_set_privacy。',
+        ].join('\n')
       },
     }),
   )
