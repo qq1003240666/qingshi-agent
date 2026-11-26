@@ -252,8 +252,16 @@ export function formatScan(result, { detail = false, limitPerSession = 20 } = {}
     const shown = detail ? session.photos : session.photos.slice(0, limitPerSession)
     for (const photo of shown) {
       const t = String(photo.takenAt || '').slice(11, 16)
-      const extra = photo.timeSource === 'exif' ? '' : `（时间来自${photo.timeSource === 'filename' ? '文件名' : '文件属性'}）`
-      lines.push(`  - ${t}  ${photo.path}${extra}`)
+      const size = formatBytes(photo.bytes || 0)
+      const res = photo.width && photo.height ? `${photo.width}×${photo.height}` : ''
+      const cam = photo.camera || ''
+      const fmt = String(photo.format || '').toUpperCase()
+      const gps = photo.gps ? `  📍 ${photo.gps.latitude},${photo.gps.longitude}` : ''
+      const camStr = cam ? `  📷 ${cam}` : ''
+      const dims = [fmt, res, size].filter(Boolean).join(' · ')
+      const srcMap = { exif: '', filename: '  ⚠️文件名时间', mtime: '  ⚠️文件属性时间' }
+      const srcBadge = srcMap[photo.timeSource] || ''
+      lines.push(`  - ${t}  ${photo.path}${srcBadge}${gps}${camStr}${dims ? `  [${dims}]` : ''}`)
     }
     if (!detail && session.photos.length > shown.length) {
       lines.push(`  - …还有 ${session.photos.length - shown.length} 张（需要完整清单就再调一次，detail=true）`)
