@@ -31,6 +31,7 @@ import { PAGES, findPages, pageUrl, pageBrief } from './lib/pages-map.js'
 import { installWindowBar } from './lib/window-bar.js'
 import { createCareerApi } from './lib/career-api.js'
 import { scanMedia, formatScan, formatBytes } from './lib/photo-scan.js'
+import { createPhoneUpload } from './lib/phone-upload.js'
 import { createGeocoder } from './lib/geo.js'
 import { createUserCache } from './lib/users.js'
 import { setHost, setClientInfo, resolveClientLabel, appendAttribution } from './lib/attribution.js'
@@ -348,6 +349,13 @@ export function apply(ctx, config = {}) {
   const careerApi = createCareerApi({
     authed,
     workspaceDir: cfg.workspaceDir,
+    logger: (line) => ctx.logger?.debug?.(line),
+  })
+  // 手机扫码上传：临时桶只暂存，下载回本地后仍走标准三步上传
+  const phoneUpload = createPhoneUpload({
+    workspaceDir: cfg.workspaceDir,
+    authed,
+    openWindow: (url, options) => openInWindow(url, options),
     logger: (line) => ctx.logger?.debug?.(line),
   })
   // 族谱接口只回 uid + 称呼，昵称/生日要另查 /get_userinfo（24h 缓存）。
@@ -1053,6 +1061,14 @@ export function apply(ctx, config = {}) {
     '  ⑤ 用户确认后调 qingshi_photo_save：先不带 confirm 拿预览（会自动算出总大小），再带 confirm=true 真正上传；它上传前会核对云空间额度，额度不够会整体拒绝——不要绕过、不要分批硬传，直接告诉用户还差多少；',
     '  ⑥ 某个场次如果和已有记录是同一次（qingshi_photo_scan 会给出候选），改用 qingshi_edit 带 imagePaths 追加图片，不要新建重复记录；',
     '  ⑦ 全部处理完，逐组告诉用户结果：成功几条、失败几条、各自的 event_id；',
+    '- 手机上传照片（“手机上传”“用手机传照片”“扫码把相册传上来”）→ 严格按这个顺序：',
+    '  ① qingshi_phone_upload_start：生成二维码并打开本机确认窗，让用户用手机扫码选照片；',
+    '  ② 用户说“传完了”或手机点了「完成」后，调 qingshi_phone_upload_status（可带 waitSeconds=30~60）；',
+    '  ③ 状态到 completed 后，先问一句「要无损压缩还是原图？」，再按用户选择调 qingshi_phone_upload_pick；',
+    '  ④ 如果 pick 说缺少 jpegtran / oxipng，先把原因说清楚，问「要我现在下载安装吗」，同意后带 allowInstall=true 重调；',
+    '  ⑤ 拿 pick 返回的拍摄时间分组、起标题写正文，给用户确认后走 qingshi_photo_save（或 qingshi_edit 追加）；',
+    '  ⑥ 写入完成后调 qingshi_phone_upload_finish 传 eventIds 收尾（删临时区）；用户中途放弃就用 cancel=true；',
+    '  ⑦ 临时区照片只是副本：没保存成功前不要调 finish，也不要说“已经存好了”；',
     '- 记录自己的故事 / 感悟（“帮我记一笔”“今天……”）→ qingshi_draft 记成本地草稿，等用户确认再发布；',
     '  感悟类 eventTag 用 idea（想法）、summary（总结）、turning（转折）或 record（记录）。',
     '- 给家人记录 → 同样先 qingshi_draft（带 targetUid），但代家人写默认关闭，需要用户明确同意。',
@@ -2335,6 +2351,188 @@ export function apply(ctx, config = {}) {
           quotaLine,
           '注意：这些记录默认是「所有人可见」。要改成仅自己可见，可以用 qingshi_set_privacy。',
         ].join('\n')
+      },
+    }),
+  )
+
+  // ---------- 手机扫码上传 ----------
+  ctx.tools.register(
+    defineTool({
+      name: 'qingshi_phone_upload_start',
+      description:
+        '用户说「手机上传」「用手机传照片」「扫码传照片」时用：在电脑上生成这个账号专属的上传二维码，' +
+        '并打开一个本机确认窗（手机传了哪些、传了多少会实时显示）。' +
+        '照片只先暂存在临时桶，不占配额、不进正式相册；等电脑下载回本地后才走标准上传。' +
+        '已有一个没超时的上传会话时会直接复用，不会重复建。',
+      parameters: {
+        openReview: {
+          type: 'boolean',
+          description: '是否自动打开本机确认窗，默认 true；无窗口环境传 false',
+        },
+      },
+      output: outputSpec,
+      async execute(args) {
+        const info = await ensureLoggedIn()
+        if (!info.loggedIn) return needLoginText(info)
+        const result = await phoneUpload.start({ openReview: args?.openReview !== false })
+        if (!result.ok) return result.message
+        const lines = [
+          result.reused ? '已经有一个进行中的手机上传会话，二维码已刷新。' : '手机上传二维码已生成。',
+          result.window?.opened
+            ? '本机确认窗已经打开，让用户用手机上的相机/微信扫一下，选好照片后点「完成」。'
+            : '这台机器没能自动弹窗。把下面的上传地址给用户，用手机浏览器打开（不要发到公开的地方）：',
+        ]
+        if (!result.window?.opened) lines.push(result.uploadUrl)
+        if (!result.hasQr) lines.push('（二维码图片生成失败，通常不影响上传，直接用上面的地址也可以。）')
+        lines.push('', '手机传完之后，调 qingshi_phone_upload_status 查看收到多少张。')
+        return lines.join(NL)
+      },
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'qingshi_phone_upload_status',
+      description:
+        '查看手机扫码上传的进度：手机上已经传了多少张、每张的拍摄时间和大小、还剩多久有效。' +
+        '状态到 completed 就说明手机那边点过「完成」，可以进入下载和归档；' +
+        '需要等手机传完时可以带 waitSeconds，让它在工具内部轮询而不是反复调用。',
+      parameters: {
+        sessionId: { type: 'string', description: '上传会话 id；不填就用本地记录里当前这次' },
+        waitSeconds: {
+          type: 'number',
+          description: '最多等多少秒（每 2 秒查一次），默认 0 只查一次；用户说「传完了」时可以给 30~60',
+        },
+      },
+      output: outputSpec,
+      async execute(args) {
+        const info = await ensureLoggedIn()
+        if (!info.loggedIn) return needLoginText(info)
+        const result = await phoneUpload.status({
+          sessionId: String(args?.sessionId || '').trim(),
+          waitSeconds: Number(args?.waitSeconds) || 0,
+        })
+        if (!result.ok) return result.message
+
+        const statusText = {
+          waiting: '手机还没开始传（二维码还没扫，或者还没选照片）',
+          uploading: '手机正在上传',
+          completed: '手机已传完',
+          importing: '已进入电脑整理阶段',
+          done: '已归档完成',
+          expired: '会话已过期',
+          canceled: '会话已取消',
+        }[result.status] || result.status
+
+        const lines = [`手机上传状态：${statusText}（已收到 ${result.files.length} 张，共 ${formatBytes(result.totalBytes)}）`]
+        result.files.slice(0, 40).forEach((item, index) => {
+          const when = item.taken_at ? ` · ${item.taken_at}` : ''
+          lines.push(`${index + 1}. ${item.file_name || '未命名'}${when} · ${formatBytes(item.file_size || 0)}`)
+        })
+        if (result.files.length > 40) lines.push(`……还有 ${result.files.length - 40} 张未列出`)
+        if (result.expiresIn > 0) lines.push('', `二维码还有约 ${Math.ceil(result.expiresIn / 60)} 分钟有效。`)
+
+        if (result.status === 'completed' || result.status === 'importing') {
+          lines.push('', '下一步：先问用户「无损压缩还是原图」，再调 qingshi_phone_upload_pick。')
+        } else if (result.status === 'waiting') {
+          lines.push('', '让用户在手机上扫码选照片，选完点「完成」。')
+        } else if (result.status === 'uploading') {
+          lines.push('', '手机还在传，等它点「完成」或再查一次。')
+        }
+        return lines.join(NL)
+      },
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'qingshi_phone_upload_pick',
+      description:
+        '把手机已经传完的照片下载回这台电脑，落到本地暂存目录，并读出每张的拍摄时间和 GPS。' +
+        'compression=lossless 时对 JPEG 用 jpegtran、PNG 用 oxipng 做无损压缩；' +
+        '这两个工具缺失不会偷偷装上：先返回提示，用户同意后再带 allowInstall=true 调一次。' +
+        'HEIC 会在这一步转成 JPG。下载完成后，用 qingshi_photo_scan / qingshi_photo_save 继续分组归档。',
+      parameters: {
+        compression: {
+          type: 'string',
+          description: 'original=保留原图（默认）；lossless=无损压缩后再归档',
+        },
+        allowInstall: {
+          type: 'boolean',
+          description: '用户明确同意后传 true，才会下载安装 jpegtran / oxipng',
+        },
+      },
+      output: outputSpec,
+      async execute(args) {
+        const info = await ensureLoggedIn()
+        if (!info.loggedIn) return needLoginText(info)
+        const result = await phoneUpload.pick({
+          compression: String(args?.compression || 'original').toLowerCase() === 'lossless' ? 'lossless' : 'original',
+          allowInstall: args?.allowInstall === true,
+        })
+        if (!result.ok) return result.message
+
+        const lines = [`已把 ${result.files.length} 张照片下载到本机：${result.localDir}`]
+        result.files.slice(0, 60).forEach((item, index) => {
+          const when = item.takenAt ? ` · ${item.takenAt}` : ' · （没有拍摄时间）'
+          const gps = item.gps && item.gps.latitude ? ` · ${item.gps.latitude},${item.gps.longitude}` : ''
+          lines.push(`${index + 1}. ${item.fileName}${when} · ${formatBytes(item.bytes)}${gps}`)
+          lines.push(`   本地路径：${item.localPath}`)
+        })
+        if (result.files.length > 60) lines.push(`……还有 ${result.files.length - 60} 张未列出`)
+        if (result.compressedSaved > 0) {
+          lines.push('', `无损压缩省了 ${formatBytes(result.compressedSaved)}。`)
+        }
+        if (result.notes?.length) lines.push('', ...result.notes.slice(0, 10))
+        if (result.problems?.length) lines.push('', '有这些没处理成功：', ...result.problems.slice(0, 10))
+
+        if (result.needConsent) {
+          lines.push(
+            '',
+            `这台电脑还没有无损压缩工具。要我现在下载安装到 ${result.toolsDir} 吗？（只装本地，不动系统目录）`,
+            '用户同意后，用 allowInstall=true 再调一次 qingshi_phone_upload_pick；已经下载过的照片不会重复下载。',
+          )
+        } else {
+          lines.push(
+            '',
+            '下一步：按拍摄时间把这些照片分组、起标题写正文给用户确认，然后用 qingshi_photo_save 写入青史；',
+            '全部写完后调 qingshi_phone_upload_finish（传 eventIds）清理临时区。',
+          )
+        }
+        return lines.join(NL)
+      },
+    }),
+  )
+
+  ctx.tools.register(
+    defineTool({
+      name: 'qingshi_phone_upload_finish',
+      description:
+        '手机上传的收尾：照片已经写入生涯后调用，登记导入结果并删除临时桶里的整个目录；' +
+        '用户中途放弃时传 cancel=true 也能清空临时区。' +
+        '不要在还没保存成功时调用，否则临时区的原图会被删掉。',
+      parameters: {
+        eventIds: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '这次由手机照片生成 / 追加的生涯事件 id，可传多个',
+        },
+        cancel: {
+          type: 'boolean',
+          description: 'true = 放弃这次上传并清空临时区',
+        },
+      },
+      output: outputSpec,
+      async execute(args) {
+        const info = await ensureLoggedIn()
+        if (!info.loggedIn) return needLoginText(info)
+        const result = await phoneUpload.finish({
+          eventIds: Array.isArray(args?.eventIds) ? args.eventIds : [],
+          cancel: args?.cancel === true,
+        })
+        if (!result.ok) return result.message
+        if (result.canceled) return '已取消这次手机上传，临时区清空了。'
+        return `收尾完成：登记了 ${result.eventCount} 条生涯记录，临时区删除了 ${result.removed} 个文件。`
       },
     }),
   )

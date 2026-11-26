@@ -1,7 +1,7 @@
 ﻿# 青史 Agent · 插件作用说明
 
 > 本文档面向**终端用户**和**AI Agent**（MCP server 的 system instructions 也会参考这里的说法）。
-> 完整安装指南见 [README.md](../README.md)，39 个工具的参数明细见 [docs/TOOLS.md](TOOLS.md)。
+> 完整安装指南见 [README.md](../README.md)，43 个工具的参数明细见 [docs/TOOLS.md](TOOLS.md)。
 
 ---
 
@@ -37,7 +37,7 @@
 青史 Agent 做了三件事：
 
 ```
-一份内核        →  同时给 DSH（原生气泡）和 MCP（39 个标准工具）用
+一份内核        →  同时给 DSH（原生气泡）和 MCP（43 个标准工具）用
 一键配置        →  qingshi install --client <trae|codex|claude-code|...>
 真实数据源      →  全部从青史永存后端实时拉，AI 永远读的是你最新的记录
 ```
@@ -197,7 +197,7 @@ MCP server 在 `initialize` 阶段会自动注入以下系统指令，让模型�
 
 ---
 
-## 39 个工具一览（按功能分组）
+## 43 个工具一览（按功能分组）
 
 ### 登录 / 身份管理（5）
 `qingshi_login` · `qingshi_save_login` · `qingshi_logout` · `qingshi_where` · `qingshi_me`
@@ -211,8 +211,8 @@ MCP server 在 `initialize` 阶段会自动注入以下系统指令，让模型�
 ### 族谱（9）
 `qingshi_family` · `qingshi_family_all` · `qingshi_family_add` · `qingshi_family_invite` · `qingshi_kinship` · `qingshi_open_event` · `qingshi_prepare_event` · `qingshi_family_expand` · `qingshi_family_layout`
 
-### 照片整理与云空间（3）
-`qingshi_photo_scan` · `qingshi_photo_save` · `qingshi_storage`
+### 照片整理与云空间（7）
+`qingshi_photo_scan` · `qingshi_photo_save` · `qingshi_storage` · `qingshi_phone_upload_start` · `qingshi_phone_upload_status` · `qingshi_phone_upload_pick` · `qingshi_phone_upload_finish`
 
 ### 窗口自动化（9）
 `qingshi_open_h5` · `qingshi_ui_read` · `qingshi_ui_goto` · `qingshi_ui_click` · `qingshi_ui_type` · `qingshi_ui_tap` · `qingshi_ui_shot` · `qingshi_skill` · `qingshi_profile`
@@ -260,7 +260,7 @@ node dist/cli/bin/qingshi.mjs doctor
 ## 技术架构（给开发者）
 
 ```
-packages/core/index.js          青史内核（39 个工具定义 + 登录流程 + 请求层）
+packages/core/index.js          青史内核（43 个工具定义 + 登录流程 + 请求层）
 packages/core/lib/             工具模块（request / browser / career-api / workspace / paths / tool-manifest ...）
 packages/dsh-adapter/          DSH 原生适配（cordis.patch.yml / 安装器 / locale）
 packages/mcp-server/mcp/       标准 MCP server（协议协商 / JSON Schema 转换 / annotations）

@@ -10,7 +10,7 @@
 
 - 覆盖 7 种 MCP 客户端：Codex / Claude Code / Trae / WorkBuddy / Cursor / Cline / Windsurf
 - 同时兼容 DeepSeek Harness（DSH）——一份内核，两种用法
-- **39 个工具**：登录、查资料、读/写生涯事件、族谱导航、亲属称谓计算、照片场次扫描与批量保存、云空间额度、窗口自动化
+- **43 个工具**：登录、查资料、读/写生涯事件、族谱导航、亲属称谓计算、照片场次扫描与批量保存、手机扫码上传、云空间额度、窗口自动化
 - 标准 stdio MCP 协议（支持 2025-06-18 / 2025-03-26 / 2024-11-05）
 - 完整能力说明见 [docs/FEATURES.md](docs/FEATURES.md)
 
@@ -91,7 +91,7 @@ node dist/cli/bin/qingshi.mjs doctor
 Node 22.x.x  OK
 MCP server  <你的解压目录>/dist/mcp-server/bin/qingshi-mcp.mjs
 协议  2025-06-18  server qingshi@0.24.0
-工具  39 个
+工具  43 个
 instructions 已注入
 
 自检通过
@@ -134,7 +134,7 @@ qingshi clients       列出支持的客户端
 
 ---
 
-## 工具清单（39 个）
+## 工具清单（43 个）
 
 ### 登录 / 身份
 
@@ -191,6 +191,10 @@ qingshi clients       列出支持的客户端
 | `qingshi_photo_scan` | 扫描照片/视频，读 EXIF 拍摄时间和 GPS，按"地点 + 时间"聚成场次，并匹配已有生涯记录（只读） |
 | `qingshi_photo_save` | 把整理好的分组批量写入：先预览，确认后先核对云空间额度再上传，逐组报告结果 |
 | `qingshi_storage` | 查看云空间总量 / 已用 / 剩余，可判断这次要传的照片够不够 |
+| `qingshi_phone_upload_start` | 手机上传第一步：生成专属二维码并打开本机确认窗，手机扫码选照片，先暂存到独立临时桶（不占配额） |
+| `qingshi_phone_upload_status` | 查看手机传了多少张、拍摄时间、还剩多久有效；可等待手机传完 |
+| `qingshi_phone_upload_pick` | 把手机传完的照片下载回电脑，可选无损压缩（jpegtran / oxipng）、HEIC 转 JPG，再交给 `qingshi_photo_save` 归档 |
+| `qingshi_phone_upload_finish` | 归档完成后收尾：登记导入结果并删除临时桶整个目录；中途放弃传 `cancel: true` |
 
 > iPhone 拍的 HEIC 照片会自动转成 JPG 再上传（后端不支持 heic，会明确提示），不用手动转换。转换前会先按文件名读出拍摄时间写进 JPG（如 `IMG_20230815_091233.HEIC`），时间不会丢；转换失败会提示装哪解码器。需要批量、离线、且必须完整保留拍摄时间与 GPS 的转换，用仓库里的 [scripts/heic2jpg.py](scripts/heic2jpg.py)：
 >

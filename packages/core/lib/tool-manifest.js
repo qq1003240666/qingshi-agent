@@ -19,6 +19,7 @@ const READ_ONLY = new Set([
   'qingshi_family_all',
   'qingshi_photo_scan',
   'qingshi_storage',
+  'qingshi_phone_upload_status',
 ])
 
 // 会覆盖或删除既有数据的操作
@@ -77,6 +78,10 @@ const TITLES = {
   qingshi_photo_scan: '扫描照片场次',
   qingshi_storage: '查看存储额度',
   qingshi_photo_save: '保存照片到青史',
+  qingshi_phone_upload_start: '手机扫码上传照片',
+  qingshi_phone_upload_status: '查看手机上传进度',
+  qingshi_phone_upload_pick: '把手机照片取回电脑',
+  qingshi_phone_upload_finish: '手机上传收尾',
 }
 
 export const TOOL_MANIFEST = Object.freeze(

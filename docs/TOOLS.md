@@ -1,6 +1,6 @@
 # 工具清单
 
-共 39 个工具。这份文件由 `npm run gen-docs` 生成，请勿手改。
+共 43 个工具。这份文件由 `npm run gen-docs` 生成，请勿手改。
 
 | 工具 | 标题 | 类型 |
 | --- | --- | --- |
@@ -43,3 +43,7 @@
 | `qingshi_photo_scan` | 扫描照片场次 | 只读 |
 | `qingshi_storage` | 查看存储额度 | 只读 |
 | `qingshi_photo_save` | 保存照片到青史 | 写入 |
+| `qingshi_phone_upload_start` | 手机扫码上传照片 | 写入 |
+| `qingshi_phone_upload_status` | 查看手机上传进度 | 只读 |
+| `qingshi_phone_upload_pick` | 把手机照片取回电脑 | 写入 |
+| `qingshi_phone_upload_finish` | 手机上传收尾 | 写入 |

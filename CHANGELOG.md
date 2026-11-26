@@ -8,7 +8,8 @@
 - **批量保存照片**：新增 `qingshi_photo_save`，一组照片 = 一条生涯记录；分两步——先预览拿到每组标题/时间/张数/总大小，用户确认后 `confirm=true` 才真正上传；上传前自动核对云空间额度，不够就整体拒绝，不传一半；遍历所有分组并逐组报告结果。
 - **查看存储额度**：新增 `qingshi_storage`（只读），读取 `/get_user_storage_quota`，显示总量 / 已用 / 预留 / 剩余 / 使用率，可传 `requiredBytes` 直接判断够不够。
 - **给已有记录追加图片**：`qingshi_edit` 新增 `imagePaths`，上传后与原有图片合并回写，不覆盖已上传的图；支持 `dryRun` 预览，`dryRun` 时不上传。
-- 工具总数 36 → **39**。
+- **手机扫码上传**：新增 `qingshi_phone_upload_start` / `status` / `pick` / `finish` 四个工具。电脑上生成专属二维码并打开本机确认窗，手机扫码把相册照片先传进独立的临时桶（`uid/创建时间/` 目录，不计配额、不写 `upload_files`）；手机点「完成」后电脑把照片下载回本地，可选无损压缩（JPEG 用 `jpegtran`、PNG 用 `oxipng`，缺失时先征得同意再自动装到 `<数据目录>/tools/`），HEIC 在本地转成 JPG；随后仍走标准三步上传写进正式桶，归档完成后删除临时目录。手机上传页放在核心代码前端 `pages/upload/phoneUpload`（`qingshi.iyouwc.cn`）。
+- 工具总数 36 → **43**。
 
 ### 修复
 
