@@ -10,6 +10,16 @@
 - **给已有记录追加图片**：`qingshi_edit` 新增 `imagePaths`，上传后与原有图片合并回写，不覆盖已上传的图；支持 `dryRun` 预览，`dryRun` 时不上传。
 - 工具总数 36 → **39**。
 
+### 修复
+
+- 图片上传严格对齐青史标准上传链路（小程序 / H5 的 `utils/upload.js` 与后端 `validate_single_upload_request`），保证三端同一套逻辑：
+  - 签名请求补齐 `custom_object_key`，字段命名与前端一致：`biz_type / of_uid / target_type / custom_object_key / file_name / file_size / content_type`
+  - 上传前校验扩展名白名单（`career_media` 只允许 jpg/jpeg/png/webp/gif/mp4/mov/m4v/webm）、文件大小必须 > 0，错误提示在前端就给出，不再等后端拒
+  - 文件名没有扩展名时按 `content_type` 自动补全（与前端 `ensureFileExtension` 一致）
+  - 直传 OSS 的字段名固定 `file`，`form_data` 原样透传
+  - 返回的 `upload_file_id` / `url` / `content_type` 优先取 `/confirm_oss_upload` 的结果
+  - 新增 `test/upload.test.mjs` 固化这条契约（4 项断言）
+
 ## v0.24.0 (2026-11-24)
 
 ### 破坏性变更

@@ -274,6 +274,7 @@ MCP server 的 `initialize` 会注入一段 system instructions，让模型知�
 - **Token 不经过对话**：`auth.json` 只存在本机（权限 0600），永远不会出现在工具参数或输出里。
 - **写操作有闸门**：`qingshi_record`、`qingshi_edit` 等不传 `confirm: true` 只给预览，不真的写云端。
 - **危险工具显式标记**：`qingshi_delete`、`qingshi_logout` 等带 `destructiveHint: true`，支持的客户端会自动弹确认框。
+- **上传同一条链路**：图片走和小程序 / H5 完全相同的三步 OSS 流程（申请签名 → 直传 → 确认入库），扩展名、大小、字段名都按后端标准校验，没有插件专用上传。
 - **窗口只连青史域**：H5 自动化只操作 `qingshi.iyouwc.cn` 页面，不会跳去任意 URL。
 
 详细见 [SECURITY.md](SECURITY.md)。
