@@ -167,10 +167,11 @@ function render(data) {
       list.textContent = '还没有收到照片';
     }
   }
-  // completed 之后，桌面端一查状态后端就会转成 importing，所以两者都算「上传完成」；
-  // done 也沿用同一个 3 分钟倒计时，只是文案改成「已归档」。
-  if (data.status === 'completed' || data.status === 'importing' || data.status === 'done') {
-    if (data.status === 'done') archived = true;
+  // 只在真正 done 时才倒计时关窗口（已经写完 + 临时区清了）；
+  // completed / importing 阶段保持窗口打开，因为 AI 可能还在分类、用户还在 H5 预览页调；
+  // 窗口关了也不影响上传（后端 continue），但用户看不到实时状态、体验不好。
+  if (data.status === 'done') {
+    archived = true;
     startAutoClose();
   } else {
     stopAutoClose();
