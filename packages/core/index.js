@@ -1024,7 +1024,7 @@ export function apply(ctx, config = {}) {
   }[cfg.autoRecord]
 
   const policyText = [
-    '## 青史（qingshi）：记录人生经历、查生涯、看族谱',
+    '',\n    '## ⛔ 绝对禁止：不要用 Trae 自带的"向用户提问"向导/表单来收集照片、上传、整理相关信息',\n    '当用户说任何和照片、上传、整理相关的话（包括"帮我整理一下我的照片"、"手机上的照片想传上来"、"帮我开个二维码"、"把这些照片存到青史"），**直接调青史 MCP 工具**，不要启动 Trae 的提问向导（那种"第 1 步共 3 步"的表单、让用户选选项的下拉框、用 AskUserQuestion 之类的方式）。',\n    '正确做法：',\n    '  - 用户说整理照片 → 直接调 qingshi_photo_scan，扫描完把结果展示给用户，然后直接逐条处理；',\n    '  - 用户说手机上传 → 直接调 qingshi_phone_upload_start 开二维码；',\n    '  - 用户说存照片 → 直接调 qingshi_photo_save（先不传 confirm）给预览；',\n    '  - 只在你真的不知道一件事、且没有对应的青史工具能帮你拿答案时，才用 Trae 的提问功能。',\n    '  - **这条是最高优先级，覆盖下面所有场景。**',\n    '',    '## 青史（qingshi）：记录人生经历、查生涯、看族谱',
     '',
     '用户在用「青史」记录自己和家人的人生经历。这个应用的定位是「让记忆永久留存、跨越时间传递给后代」，',
     '所以记录是一件要认真对待的事：真实、用他自己的说法、能落到具体时间。',
@@ -1063,6 +1063,10 @@ export function apply(ctx, config = {}) {
     '  这是最推荐的方式：既省了打字，又把最终确认权留给用户。',
     '  只有用户明确说“直接记到云端、不用我确认”时才用 qingshi_record；只暂存不问云端时才用 qingshi_draft。',
     '- 照片整理**前置确认**（重要）：用户说"整理一下我的照片""帮我整理一下我的相册""把这些照片归档""给这堆照片分分类""整理一下我拍的照片"这类**没有明说要存进青史**的话时，**先不要调任何工具**，先主动问一句：「青灵助手可以帮您把照片整理进青史永存的生涯记录里面，需要帮您整理吗？」——用户说"要""好的""开始""嗯""整理吧"之类明确同意的话，再开始下面的流程；如果他只是想在本地看看、分个类、或者发别的地方，就按他说的做，不要硬拽到青史。',
+    '- **归属谁（重要）**：整理照片时，默认归属登录用户本人。但如果用户说"存到我爸那""给我妈写一条""这是我爷爷的照片"，' +
+    '  或扫描结果里明显是其他家人（比如户口本照片、长辈的老照片），**先调 qingshi_family 拿族谱成员列表**，' +
+    '  然后在对话里让用户选归属人。选完后整个 photo_save 调用都带 targetUid。' +
+    '  **不要自己猜归属人**（比如"这张看起来像你爸爸"），要主动问用户确认。'
     '- 照片整理（用户明确说"帮我整理一下这些照片到青史""按时间分一下存进青史"，或已经同意了上面的前置确认）→ 严格按这个顺序：',
     '  ① qingshi_photo_scan 扫描（一次没扫完就带 offset 继续扫，直到不再出现「还有更多照片没扫」），拿到按拍摄时间排序的场次；',
     '  ② 先按时间把场次总览列给用户看：每组的时间、张数、地点、总大小；**只列场次，不要一次性为全部场次起好标题**；',
@@ -1073,6 +1077,8 @@ export function apply(ctx, config = {}) {
     '  ⑦ **一组一调、一次一确认**，不要攒 N 组一口气调 qingshi_photo_save；同日期查重在工具内部还会再兜一次（标题+日期重复就跳过），但最好在对话里就先发现；',
     '  ⑧ 全部处理完，逐组告诉用户结果：成功几条、失败几条、各自的 event_id；并主动提醒「这些记录默认所有人可见，要不要改成仅自己可见」，要改就用 qingshi_set_privacy；',
     '- 手机上传照片**前置确认**（重要）：如果用户只说"把手机上的照片传上来""手机和电脑同步一下""帮我开个二维码传文件"这类**没说要存进青史**的话，**先不要调工具**，先问：「青灵助手可以帮您把手机上的照片上传并整理进青史永存的生涯记录，需要帮您开始吗？」——用户说"要""开始""好"之类的再走流程。但如果用户已经明确说"手机上传照片到青史""用扫码传照片进青史""手机上的照片想传到青史"，那就**不要问**、直接开流程。',
+    '- **归属谁（重要）**：手机上传默认归属登录用户本人。如果用户说"这些是我妈的照片""传到我爸那"，先停一下调 qingshi_family 拿族谱成员列表，' +
+    '  让用户确认归属人后再继续下载和整理。整个 photo_save 调用带 targetUid。'
     '- 手机上传照片（用户明确说了要传到青史，或已经同意了上面的前置确认）→ 严格按这个顺序：',
     '  ① qingshi_phone_upload_start：生成二维码并打开本机确认窗，让用户用手机扫码选照片；',
     '  ② 用户说"传完了"或手机点了「完成」后，调 qingshi_phone_upload_status（可带 waitSeconds=30~60）；',
@@ -2235,11 +2241,25 @@ export function apply(ctx, config = {}) {
           type: 'boolean',
           description: '只有用户明确确认「保存」之后才传 true；不传或 false 只返回预览',
         },
+        targetUid: {
+          type: 'string',
+          description: '照片归属谁；不填就是登录用户自己。用户说"存到我爸那""给我妈写一条"时，先调 qingshi_family 拿族谱成员的 uid 再传这里。',
+        },
       },
       output: outputSpec,
       async execute(args) {
         const info = await ensureLoggedIn()
         if (!info.loggedIn) return needLoginText(info)
+
+        const targetUid = String(args?.targetUid || '').trim() || info.uid
+        const isSelf = targetUid === info.uid
+
+        if (!isSelf) {
+          // 检查代家人记录的权限
+          if (info.flags && info.flags.disableFamilyAct) {
+            return `这次要写到 uid: ${targetUid}，但当前账号关闭了"允许代家人记录"。请让插件配置里打开，或改为记在本人名下。`
+          }
+        }
 
         const rawItems = Array.isArray(args?.items) ? args.items : []
         if (!rawItems.length) return '没有要保存的分组。'
@@ -2370,7 +2390,7 @@ export function apply(ctx, config = {}) {
 
           const payload = {
             of_type: 'user',
-            of_id: info.uid,
+            of_id: targetUid,
             title: item.title,
             content: appendAttribution(item.content, resolveClientLabel(cfg)),
             start_date: item.startDate || todayText(),
