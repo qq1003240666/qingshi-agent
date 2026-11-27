@@ -36,7 +36,7 @@ import { createGeocoder } from './lib/geo.js'
 import { createUserCache } from './lib/users.js'
 import { setHost, setClientInfo, resolveClientLabel, appendAttribution } from './lib/attribution.js'
 import { readFile, writeFile, readdir, stat } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { dirname, join, basename } from 'node:path'
 import { tmpdir } from 'node:os'
 import { fileURLToPath } from 'node:url'
 
@@ -1081,13 +1081,13 @@ export function apply(ctx, config = {}) {
     '- 手机上传照片（“手机上传”“用手机传照片”“扫码把相册传上来”）→ 严格按这个顺序：',
     '  ① qingshi_phone_upload_start：生成二维码并打开本机确认窗，让用户用手机扫码选照片；',
     '  ② 用户说“传完了”或手机点了「完成」后，调 qingshi_phone_upload_status（可带 waitSeconds=30~60）；',
-    '  ③ 状态到 completed 后，先问一句「要无损压缩还是原图？」，再按用户选择调 qingshi_phone_upload_pick；',
-    '  ④ 如果 pick 说缺少 jpegtran / oxipng，先把原因说清楚，问「要我现在下载安装吗」，同意后带 allowInstall=true 重调；',
-    '  ⑤ pick 返回完整元信息后，按时间段（优先级最高）+ GPS 地点 + 内容分组，逐组起标题、写正文（开头 100 字内尽量描述画面）、选标签，对明显废图（糊的、黑的、截错的）归到 discard 组；',
-    '  ⑥ 调 **qingshi_phone_upload_preview** 把分好的 planned_events 推到后端 session（带 classification_basis / file_keys / discard / merge_to 等字段）——**这一步绝对不能省**，它是 H5 分类工作台能渲染出来的前提；',
-    '  ⑦ 立刻在对话里告诉用户：「我已经分好 X 组了，手机上现在能看到完整分类预览页了」+ 简单列一下每组的标题 + 分类依据，让用户去 H5 看；',
-    '  ⑧ **等用户确认或调整**：用户可能在 H5 里改了标题/删了图/挪了废弃桶，也可能在对话里说"第 2 组标题改成 xxx""这三张不要存"——如果用户在对话里改了，再调一次 qingshi_phone_upload_preview 覆盖最新版本；',
-    '  ⑨ 确认后逐组调 qingshi_photo_save 写入（废弃桶的跳过），或 qingshi_edit 追加到已有事件；',
+    '  ③ 状态到 completed 后调 qingshi_phone_upload_pick（默认 original，先读元信息、不压缩）；',
+    '  ④ pick 返回完整元信息后，按时间段（优先级最高）+ GPS 地点 + 内容分组，逐组起标题、写正文（开头 100 字内尽量描述画面）、选标签，对明显废图（糊的、黑的、截错的）归到 discard 组；',
+    '  ⑤ 调 **qingshi_phone_upload_preview** 把分好的 planned_events 推到后端 session（带 classification_basis / file_keys / discard / merge_to 等字段）——**这一步绝对不能省**，它是 H5 分类工作台能渲染出来的前提；',
+    '  ⑥ 立刻在对话里告诉用户：「我已经分好 X 组了，手机上现在能看到完整分类预览页了」+ 简单列一下每组的标题 + 分类依据，让用户去 H5 看；',
+    '  ⑦ **等用户确认或调整**：用户可能在 H5 里改了标题/删了图/挪了废弃桶，也可能在对话里说"第 2 组标题改成 xxx""这三张不要存"——如果用户在对话里改了，再调一次 qingshi_phone_upload_preview 覆盖最新版本；',
+    '  ⑧ 用户确认后，**在调 photo_save 之前先问要不要无损压缩**。如果要，调 qingshi_phone_upload_compress，filePaths 里只传要存的那些（废弃桶跳过）；压缩不会丢 EXIF/GPS；工具缺失就问用户要不要装；',
+    '  ⑨ 逐组调 qingshi_photo_save 写入（废弃桶的跳过），或 qingshi_edit 追加到已有事件；',
     '  ⑩ 全部写完后调 qingshi_phone_upload_finish 收尾（删临时区），done 状态后窗口 3 分钟自动关闭；',
     '  ⑪ 用户中途放弃就用 cancel=true；没保存成功前绝对不要调 finish、也不要说"已经存好了"；',
     '- 记录自己的故事 / 感悟（“帮我记一笔”“今天……”）→ qingshi_draft 记成本地草稿，等用户确认再发布；',
@@ -2488,27 +2488,16 @@ export function apply(ctx, config = {}) {
       name: 'qingshi_phone_upload_pick',
       description:
         '把手机已经传完的照片下载回这台电脑，落到本地暂存目录，并读出每张的拍摄时间和 GPS。' +
-        'compression=lossless 时对 JPEG 用 jpegtran、PNG 用 oxipng 做无损压缩；' +
-        '这两个工具缺失不会偷偷装上：先返回提示，用户同意后再带 allowInstall=true 调一次。' +
-        'HEIC 会在这一步转成 JPG。下载完成后，用 qingshi_photo_scan / qingshi_photo_save 继续分组归档。',
+        '下载完成后，按拍摄时间/GPS分组、写标题正文，用 qingshi_phone_upload_preview 推到后端让 H5 显示分类预览；' +
+        '用户确认后，**在调 qingshi_photo_save 之前**，再调 qingshi_phone_upload_compress 对要存的照片做无损压缩。' +
+        '这样可以只压缩确定要存的照片，废弃桶里的跳过。HEIC 会在这一步转成 JPG（正式桶不支持 HEIC）。',
       parameters: {
-        compression: {
-          type: 'string',
-          description: 'original=保留原图（默认）；lossless=无损压缩后再归档',
-        },
-        allowInstall: {
-          type: 'boolean',
-          description: '用户明确同意后传 true，才会下载安装 jpegtran / oxipng',
-        },
       },
       output: outputSpec,
       async execute(args) {
         const info = await ensureLoggedIn()
         if (!info.loggedIn) return needLoginText(info)
-        const result = await phoneUpload.pick({
-          compression: String(args?.compression || 'original').toLowerCase() === 'lossless' ? 'lossless' : 'original',
-          allowInstall: args?.allowInstall === true,
-        })
+        const result = await phoneUpload.pick({ compression: 'original', allowInstall: false })
         if (!result.ok) return result.message
 
         const lines = [`已把 ${result.files.length} 张照片下载到本机：${result.localDir}`]
@@ -2519,24 +2508,81 @@ export function apply(ctx, config = {}) {
           lines.push(`   本地路径：${item.localPath}`)
         })
         if (result.files.length > 60) lines.push(`……还有 ${result.files.length - 60} 张未列出`)
-        if (result.compressedSaved > 0) {
-          lines.push('', `无损压缩省了 ${formatBytes(result.compressedSaved)}。`)
-        }
         if (result.notes?.length) lines.push('', ...result.notes.slice(0, 10))
         if (result.problems?.length) lines.push('', '有这些没处理成功：', ...result.problems.slice(0, 10))
+        lines.push(
+          '',
+          '下一步：按拍摄时间/GPS分组、起标题写正文 → 调 qingshi_phone_upload_preview 推 planned_events 到后端 → 告诉用户去 H5 看 → 等用户确认 → 再调 qingshi_phone_upload_compress（如果要无损）→ qingshi_photo_save 写入。',
+          '这样压缩只作用于确定要存的照片，废弃桶里的跳过。',
+        )
+        return lines.join(NL)
+      },
+    }),
+  )
 
-        if (result.needConsent) {
+  ctx.tools.register(
+    defineTool({
+      name: 'qingshi_phone_upload_compress',
+      description:
+        '对 phone_upload_pick 下载的照片做无损压缩（JPEG→jpegtran、PNG→oxipng）。' +
+        '必须在 AI 分类完成、用户确认后、photo_save 之前调用——这样只压缩确定要存的照片，废弃桶里的跳过。' +
+        '压缩**不会丢 EXIF/GPS 元数据**（jpegtran 默认 -copy all、oxipng 保留 text chunks）。' +
+        '工具缺失时先返回提示，用户同意后带 allowInstall=true 重调。',
+      parameters: {
+        sessionId: { type: 'string', description: '上传会话 id（phone_upload_start 返回）' },
+        filePaths: {
+          type: 'array',
+          items: { type: 'string' },
+          description: '要压缩的本地文件绝对路径列表。传分组后每组确定要存的那些图片路径，废弃桶的不要传。',
+        },
+        allowInstall: {
+          type: 'boolean',
+          description: '工具缺失时用户明确同意后传 true，才会下载安装',
+        },
+      },
+      required: ['sessionId', 'filePaths'],
+      async execute(args) {
+        const info = await ensureLoggedIn()
+        if (!info.loggedIn) return needLoginText(info)
+        const { optimizeImageInPlace, toolsDir } = await import('../lib/lossless-tools.js')
+
+        const paths = Array.isArray(args?.filePaths) ? args.filePaths.map(String).filter(Boolean) : []
+        if (!paths.length) return 'filePaths 不能为空'
+
+        const lines = [`准备对 ${paths.length} 张照片做无损压缩（不会丢 EXIF/GPS）：`]
+        let totalSaved = 0
+        let needConsent = false
+        const problems = []
+
+        for (const p of paths) {
+          try {
+            const result = await optimizeImageInPlace(p, {
+              workspaceDir: phoneUpload.workspaceDir || process.cwd(),
+              allowInstall: args?.allowInstall === true,
+            })
+            if (result.needConsent) needConsent = true
+            if (result.bytesAfter > 0 && result.bytesAfter < result.bytesBefore) {
+              totalSaved += result.bytesBefore - result.bytesAfter
+              lines.push(`  ✓ ${basename(p)}: ${formatBytes(result.bytesBefore)} → ${formatBytes(result.bytesAfter)} (${result.tool || '?'})`)
+            } else if (result.note && !result.needConsent) {
+              lines.push(`  • ${basename(p)}: ${result.note}`)
+            }
+          } catch (error) {
+            problems.push(`${basename(p)}: ${error.message}`)
+          }
+        }
+
+        if (totalSaved > 0) lines.push('', `共省了 ${formatBytes(totalSaved)}。`)
+        if (problems.length) lines.push('', `有 ${problems.length} 张没成功：`, ...problems.slice(0, 10))
+
+        if (needConsent) {
           lines.push(
             '',
-            `这台电脑还没有无损压缩工具。要我现在下载安装到 ${result.toolsDir} 吗？（只装本地，不动系统目录）`,
-            '用户同意后，用 allowInstall=true 再调一次 qingshi_phone_upload_pick；已经下载过的照片不会重复下载。',
+            `这台电脑还没有无损压缩工具。要我现在下载安装到 ${toolsDir(phoneUpload.workspaceDir || process.cwd())} 吗？（只装本地，不动系统目录）`,
+            '用户同意后，用 allowInstall=true 再调一次 qingshi_phone_upload_compress。',
           )
         } else {
-          lines.push(
-            '',
-            '下一步：按拍摄时间把这些照片分组、起标题写正文给用户确认，然后用 qingshi_photo_save 写入青史；',
-            '全部写完后调 qingshi_phone_upload_finish（传 eventIds）清理临时区。',
-          )
+          lines.push('', `下一步：调 qingshi_photo_save 把这些照片写入青史永存的生涯记录。`)
         }
         return lines.join(NL)
       },
