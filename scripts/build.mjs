@@ -36,7 +36,7 @@ function copyCore(target) {
   copy(path.join(core, 'index.js'), path.join(target, 'index.js'))
   copy(path.join(core, 'lib'), path.join(target, 'lib'))
   copy(path.join(core, 'shell'), path.join(target, 'shell'))
-  copy(path.join(core, 'skills'), path.join(target, 'skills'))
+  copy(path.join(core, 'docs'), path.join(target, 'docs'))
 }
 
 // 核心包与 MCP 包不能出现静态 @deepseek-ai 导入；
@@ -120,7 +120,7 @@ for (const file of [
   'dist/dsh-plugin/index.js',
   'dist/dsh-plugin/lib/request.js',
   'dist/dsh-plugin/shell/preload.js',
-  'dist/dsh-plugin/skills/qingshi-org-entry/SKILL.md',
+  'dist/dsh-plugin/docs/org-entry/SKILL.md',
   'dist/mcp-server/index.js',
   'dist/mcp-server/lib/tool-manifest.js',
   'dist/mcp-server/mcp/server.mjs',
