@@ -3563,26 +3563,25 @@ export function apply(ctx, config = {}) {
         const keyword = String(args?.keyword || '').trim()
         const listRes = await authed('/get_manageable_tmp_user_list', {})
         if (listRes.code !== 200) return `查询失败：${listRes.code} ${listRes.message || ''}`
-        const uidList = (listRes.data && listRes.data.list) || []
-        if (!Array.isArray(uidList) || !uidList.length) {
+        // 后端已返回完整用户对象（uid/nickname/gender/birthday/avatar/label 等），无需二次请求
+        const list = (listRes.data && listRes.data.list) || []
+        if (!Array.isArray(list) || !list.length) {
           return '你目前没有可管理的其他用户，只能归到自己名下。'
         }
-        // 逐个拿名字（users.get 有 24h 缓存，第二次很快）
-        const lines = [`你可以管理的用户共 ${uidList.length} 人：`]
+        const lines = [`你可以管理的用户共 ${list.length} 人：`]
         const results = []
-        for (const uid of uidList) {
-          try {
-            const p = await users.get(String(uid))
-            if (!p || (!p.nickname && !p.username)) continue
-            const name = p.nickname || p.username || '未命名'
-            const gender = p.gender === 1 || p.gender === '1' ? '男' : p.gender === 2 || p.gender === '2' ? '女' : ''
-            const birthday = String(p.birthday || '').slice(0, 10)
-            const bit = `${name}（uid: ${uid}${gender ? ' · ' + gender : ''}${birthday ? ' · ' + birthday : ''}）`
-            if (!keyword || name.includes(keyword)) {
-              results.push({ uid, name })
-              lines.push(`  · ${bit}`)
-            }
-          } catch {}
+        for (const item of list) {
+          if (!item || !item.uid) continue
+          const uid = String(item.uid)
+          const name = item.nickname || item.username || '未命名'
+          if (!name) continue
+          const gender = item.gender === 1 ? '男' : item.gender === 2 ? '女' : ''
+          const birthday = String(item.birthday || '').slice(0, 10)
+          const bit = `${name}（uid: ${uid}${gender ? ' · ' + gender : ''}${birthday ? ' · ' + birthday : ''}）`
+          if (!keyword || name.includes(keyword)) {
+            results.push({ uid, name })
+            lines.push(`  · ${bit}`)
+          }
         }
         if (keyword && !results.length) {
           lines.push(`（没有名字包含"${keyword}"的；上面是全部可管理用户）`)
