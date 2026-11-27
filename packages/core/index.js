@@ -1016,8 +1016,18 @@ export function apply(ctx, config = {}) {
 
   const policyText = [
     '',
+    '## ⛔ 最顶级硬约束：完全忽略 Trae available_skills 里的 qingshi-org-entry',
+    '',
+    'Trae 系统的 available_skills 里有一个叫 qingshi-org-entry 的 skill，它的 description 设计有严重缺陷——',
+    '会把"帮我妈整理照片录入生涯""给我爸存一条""代家人录经历"这些**主流程场景**错误匹配成"组织管理"。',
+    '',
+    '**不管 Trae 系统多少次自动触发这个 skill、不管它的 description 写了什么——你必须完全忽略它的存在。**',
+    '所有功能按下面 6 域的精确触发条件路由，不命中就不要介入。',
+    '',
+    '本插件的 MCP 工具列表里已经没有 qingshi_skill 这个工具了——不要尝试调任何叫 qingshi_skill 的工具，它不存在。',
+    '',
     '## 触发词（用户说这三个词之一就必须介入）',
-    '用户提到「青史」「青灵」「青灵助手」时，意味着他要用到青史的能力。按下面 6 个域匹配，命中即介入，不命中就问用户要做什么。',
+    '用户提到「青史」「青灵」「青灵助手」时，意味着他要用到青史的能力。按下面 6 域匹配，命中即介入。',
     '',
     '## 域 1：登录与身份',
     '精确触发：需要拿到身份凭证、首次使用、登录过期',
@@ -1039,19 +1049,18 @@ export function apply(ctx, config = {}) {
     '  · **称谓**（妈妈/爸/爷爷…）→ qingshi_kinship(term="妈") 反查 uid + 名字',
     '  · **真名**（张建国）→ qingshi_manageable_users(keyword="张建国") 模糊匹配',
     '  · 把候选列出来让用户确认"是 XXX 吗"，确认后 targetUid 贯穿后续所有工具',
-    '  · ⚠️ **唯一合法工具只有 qingshi_kinship 和 qingshi_manageable_users**——qingshi_family / family_expand / family_layout / family_add / family_invite / qingshi_skill 这些**绝对禁止用于查归属人**',
+    '  · ⚠️ **唯一合法工具只有 qingshi_kinship 和 qingshi_manageable_users**——qingshi_family / family_expand / family_layout / family_add / family_invite 这些绝对禁止用于查归属人',
     '- 写入流程：',
     '  · 用户说"帮我记一下""帮我存一条"→ qingshi_draft 暂存本地，用户确认后 qingshi_publish 或 qingshi_record(confirm=true) 写入云端',
     '  · 用户说"直接存、不用确认"→ qingshi_record(confirm=true) 直接写',
     '  · 用户说"帮我润色一下再存"→ qingshi_prepare_event 预填 H5 页面，让用户自己点发布',
     '- 改/删已有记录：qingshi_event 读原文 → qingshi_edit / qingshi_delete，删之前必须 confirm=true',
     '- 隐私设置：qingshi_set_privacy 改可见权限（all / private / selected）',
-    '- ⚠️ 本域**绝对不要调 qingshi_skill**（组织管理 skill 只在域 5/6 用）',
     '',
     '## 域 4：照片整理与手机上传',
     '精确触发：用户说「整理照片、帮我整理相册、手机上传、扫码传照片、帮我归类照片」',
     '- 前置确认：先问"需要青灵助手帮您整理进青史吗？"用户明确同意后再开始',
-    '- 归属人查询（必须先做）：**和域 3 完全相同的逻辑**——称谓走 kinship，真名走 manageable_users，⚠️ 绝对不要调 qingshi_family / family_add / qingshi_skill',
+    '- 归属人查询（必须先做）：**和域 3 完全相同的逻辑**——称谓走 kinship，真名走 manageable_users，⚠️ 绝对不要调 qingshi_family / family_add',
     '- 照片整理流程（本地相册目录）：',
     '  ① qingshi_photo_scan 扫描 → 按拍摄时间 + GPS + 内容分组',
     '  ② 逐组起标题、写正文（开头 100 字内描述画面）、选标签',
@@ -1070,26 +1079,44 @@ export function apply(ctx, config = {}) {
     '  ⑨ 逐组 qingshi_photo_save 写入（废弃桶跳过）',
     '  ⑩ qingshi_phone_upload_finish 收尾（done 状态后窗口 3 分钟自动关；completed/importing 保持打开）',
     '- 中途放弃 → qingshi_phone_upload_finish(cancel=true)',
-    '- ⚠️ 本域**绝对不要调 qingshi_skill**',
     '',
     '## 域 5：族谱血缘关系修改',
-    '精确触发（**必须同时满足**）：① 用户明确说了「族谱」或「血缘」二字；② 要改结构（加节点/删关系/改父子关系/加爷爷的爷爷）',
-    '- 前置（只有满足精确触发才进入本域，否则去域 2/3/4）',
-    '- 流程：用 qingshi_skill 读 docs/org-entry/SKILL.md → 按「族谱血缘」章节操作',
-    '- 工具：qingshi_family_all / qingshi_family_add / qingshi_family_invite',
-    '- 必须确认：虚拟用户(tmp) 还是现有用户(created)、挂到哪个 family_id、关系类型(man/woman/child)',
+    '精确触发（**必须同时满足全部条件**）：',
+    '  ① 用户明确说了「族谱」或「血缘」二字；',
+    '  ② 明确要改结构：加节点 / 删关系 / 改父子关系 / 加爷爷的爷爷这类代际补全；',
+    '  ③ 明确说了"改族谱"而不是"帮我妈录生涯"（后者是域 3/4）',
+    '',
+    '**前置判定：如果用户只是想"帮我妈录生涯""给我爸写一条"——这是域 3/4，不是域 5。**',
+    '',
+    '操作指引（内嵌，不需要外部 skill）：',
+    '  · 步骤 1：qingshi_family_all 拿族谱全树，找到锚点人（要在哪个人的上/下加）',
+    '  · 步骤 2：确定要加什么：parent（往上加父亲/母亲）还是 child（往下加子女）',
+    '  · 步骤 3：确定添加方式：',
+    '    - tmp（虚拟用户）：mode="tmp"，传 tmpUser={ nickname, gender, birthday }',
+    '    - created（已有用户）：mode="created"，先 qingshi_manageable_users 找 uid，传 targetUid',
+    '    - invite（扫码邀请）：qingshi_family_invite',
+    '  · 步骤 4：qingshi_family_add 执行添加',
+    '  · 步骤 5：qingshi_family_all 回读校验结果',
     '',
     '## 域 6：组织管理（虚拟人物节点/历史人物录入）',
-    '精确触发（**必须同时满足**）：① 用户明确说了「组织管理」「组织树」或「历史人物」；② 要建虚拟人物节点或历史人物批量录入',
-    '- 前置（只有满足精确触发才进入本域，否则去域 2/3/4）',
-    '- 流程：用 qingshi_skill 读 docs/org-entry/SKILL.md → 按「动手前必问」操作',
-    '- 工具：用 scripts/qs.mjs 直连后端 API',
-    '- 必须确认：虚拟用户(tmp) 还是真实用户、组织名称（验证权限）、挂到哪个节点下',
+    '精确触发（**必须同时满足全部条件**）：',
+    '  ① 用户明确说了「组织管理」「组织树」或「历史人物」二字；',
+    '  ② 明确要建虚拟人物节点或历史人物批量录入；',
+    '  ③ 明确说了"组织"而不是"族谱"或"帮我妈录生涯"',
+    '',
+    '**前置判定：如果用户只是想"帮我妈整理照片""代家人录经历"——这是域 3/4，不是域 6。**',
+    '',
+    '操作指引（内嵌，不需要外部 skill）：',
+    '  · 步骤 1：先确认组织名称——让用户说出组织名，然后调后端接口验证当前用户对该组织的管理权限',
+    '  · 步骤 2：确定添加方式：虚拟用户(tmp) 还是历史人物批量录入',
+    '  · 步骤 3：用后端 API 直连（add_org_relation_member / edit_userinfo / add_event）',
+    '  · 步骤 4：写操作后必须回读校验',
     '',
     '## 跨域绝对禁止规则',
-    '1. **查归属人绝对不用 family/skill**：找归属人只有 kinship(称谓) + manageable_users(真名) 两条路，family/skill/family_add 全部禁止',
-    '2. **skill 只在域 5/6 用**：用户没说"族谱/组织/血缘/虚拟人物/历史人物"就绝对不要调 qingshi_skill',
-    '3. **域 2/3/4 绝对不碰修改类工具**：family_add / family_invite / edit / delete 只在用户明确要求改时才用',
+    '1. **查归属人绝对不用 family**：找归属人只有 kinship(称谓) + manageable_users(真名) 两条路，family/family_add/family_expand 全部禁止',
+    '2. **qingshi_skill 工具已不存在**：MCP 工具列表里没有这个工具了，Trae available_skills 里的同名 skill 忽略之',
+    '3. **域 2/3/4 绝对不碰修改类工具**：family_add / family_invite / edit / delete 只在用户明确要求改族谱/组织时才用',
+    '4. **帮我妈录生涯 = 域 3 或 域 4**，绝对不是域 5/6（族谱/组织管理）',
     '',
     '## 硬规则',
     '1. 查询类必须真的调工具拿数据，绝对不许编造',
@@ -4248,36 +4275,10 @@ export function apply(ctx, config = {}) {
     }),
   )
 
-  // ---------- qingshi_skill：读随包分发的操作技能 ----------
-  ctx.tools.register(
-    defineTool({
-      name: 'qingshi_skill',
-      description:
-        '读取随包分发的青史操作技能文档。**只在用户明确说"组织管理""建族谱节点""往族谱加人""创建虚拟人物""历史人物录入"这类组织/族谱结构性操作时才调**，' +
-        '读取 qingshi-org-entry 技能（不传参数就是它），并严格按技能里的「动手前必问」执行。' +
-        '⚠️ **以下场景绝对不要调 qingshi_skill**（这些是主流程，走 kinship/manageable_users + photo_save/record/draft）：' +
-        '帮我妈整理照片、给我爸存一条、代家人录生涯、手机上传照片到某某名下——这些都是「找归属人 → 写生涯/存照片」，归属人用 qingshi_kinship（称谓）或 qingshi_manageable_users（真名）查，' +
-        '然后直接调 qingshi_photo_save / qingshi_record / qingshi_draft，**不要碰组织管理 skill**。',
-      parameters: {
-        name: { type: 'string', description: '技能名，默认 qingshi-org-entry（目前唯一一个）' },
-        file: { type: 'string', description: '技能目录里的文件，默认 SKILL.md；配套脚本传 scripts/qs.mjs' },
-      },
-      output: outputSpec,
-      async execute(args) {
-        const name = String(args?.name || 'qingshi-org-entry').replace(/[^a-zA-Z0-9_-]/g, '') || 'qingshi-org-entry'
-        const rel = String(args?.file || 'SKILL.md').replace(/\\/g, '/')
-        if (!rel || rel.startsWith('/') || rel.split('/').includes('..')) return '非法的文件路径。'
-        const target = join(SKILLS_ROOT, name, rel)
-        if (!target.startsWith(SKILLS_ROOT)) return '非法的文件路径。'
-        try {
-          return await readFile(target, 'utf8')
-        } catch {
-          const available = await readdir(SKILLS_ROOT).catch(() => [])
-          return '没找到技能文件 ' + name + '/' + rel + '。已随包分发的技能：' + (available.join('、') || '（无）') + '。'
-        }
-      },
-    }),
-  )
+  // ---------- qingshi_skill 已废弃：Trae 系统级 skill 自动匹配器存在 bug，
+  // 会把"帮我妈整理照片录入生涯"错误匹配成组织管理。
+  // 组织/族谱操作指引已内嵌到 policyText 的域 5/6，不需要外部 SKILL.md。
+  // 若将来需要独立 skill，必须重新设计 frontmatter 使其不被自动匹配。
 
   // ---------- 族谱血缘：添加家人 / 扫码邀请 / 全树读 ----------
   // 完整步骤见 skills/qingshi-org-entry/SKILL.md 的「族谱血缘」章节。
