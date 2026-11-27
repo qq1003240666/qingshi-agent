@@ -1067,7 +1067,7 @@ export function apply(ctx, config = {}) {
     '  这是最推荐的方式：既省了打字，又把最终确认权留给用户。',
     '  只有用户明确说“直接记到云端、不用我确认”时才用 qingshi_record；只暂存不问云端时才用 qingshi_draft。',
     '- 照片整理前置确认（重要）：用户说"整理一下我的照片""帮我整理一下我的相册""把这些照片归档""给这堆照片分分类""整理一下我拍的照片"这类没有明说要存进青史的话时，先不要调任何工具，先主动问一句：「青灵助手可以帮您把照片整理进青史永存的生涯记录里面，需要帮您整理吗？」——用户说"要""好的""开始""嗯""整理吧"之类明确同意的话，再开始下面的流程；如果他只是想在本地看看、分个类、或者发别的地方，就按他说的做，不要硬拽到青史。',
-    '- 归属谁（必须先问，在 photo_scan 之前）：前置确认通过后、开始扫描之前，先主动问：「这些照片要归到你自己的生涯记录里吗？」用户说"是""对""归我" → 默认归属登录用户本人，继续流程；用户说"不""归我爸""给我妈存""存到某某那" → ① 先判断用户说的是**称谓**还是**真名**：称谓是"爸爸/爸/妈妈/妈/爷爷/奶奶/外公/外婆/舅舅/舅妈/姑姑/姑父/叔叔/婶婶/阿姨/伯伯/伯/哥哥/姐姐/弟弟/妹妹/老公/老婆/丈夫/妻子/儿子/女儿/孩子/爸爸那边/妈妈那边"这类亲属称呼；② 如果是**称谓** → 调 **qingshi_kinship**（term 传那个称谓，比如 term="妈" 或 term="爸爸"），它会按关系链反查出这个人的 uid + 名字；③ 如果是**真名**（比如"张建国""小明"）→ 调 **qingshi_family** 拿当前登录用户可管理的全部族谱成员列表，按名字模糊匹配；④ 不管走哪条路，都把候选列出来让用户确认"是 XXX（uid: xxx）吗"，确认后整个 photo_save 调用都带 targetUid。**不要调 qingshi_family_all / family_expand / family_layout** 这些是给用户明确要管理组织/族谱树时才用的，找亲属归属人别用它们。',
+    '- 归属谁（必须先问，在 photo_scan 之前）：前置确认通过后、开始扫描之前，先主动问：「这些照片要归到你自己的生涯记录里吗？」用户说"是""对""归我" → 默认归属登录用户本人，继续流程；用户说"不""归我爸""给我妈存""存到某某那" → ① 先判断用户说的是**称谓**还是**真名**：称谓是"爸爸/爸/妈妈/妈/爷爷/奶奶/外公/外婆/舅舅/舅妈/姑姑/姑父/叔叔/婶婶/阿姨/伯伯/伯/哥哥/姐姐/弟弟/妹妹/老公/老婆/丈夫/妻子/儿子/女儿/孩子/爸爸那边/妈妈那边"这类亲属称呼；② 如果是**称谓** → 调 **qingshi_kinship**（term 传那个称谓，比如 term="妈" 或 term="爸爸"），它会按关系链反查出这个人的 uid + 名字；③ 如果是**真名**（比如"张建国""小明"）→ 调 **qingshi_manageable_users**（keyword 传那个名字）拿当前登录用户可管理的全部成员列表，按名字模糊匹配；④ 不管走哪条路，都把候选列出来让用户确认"是 XXX（uid: xxx）吗"，确认后整个 photo_save 调用都带 targetUid。**不要调 qingshi_family（族谱树）、family_all / family_expand / family_layout**——这些是给用户明确要管理组织/族谱树时才用的，找可管理的人别用它们。',
     '- 照片整理（用户丢来一堆照片 / 给相册目录，说“帮我整理一下这些照片到青史”“按时间分一下”）→ 严格按这个顺序：',
     '  ① qingshi_photo_scan 扫描（一次没扫完就带 offset 继续扫，直到不再出现「还有更多照片没扫」），拿到按拍摄时间排序的经历事件分组；',
     '  ② 扫描结果里**每张照片都会列出完整元信息**：拍摄时间（精确到分钟）、GPS 经纬度、文件名、文件格式（JPEG/HEIC/MP4…）、分辨率（如 4032×3024）、文件大小（如 1.2MB）、拍摄设备（如 iPhone 15 Pro）、时间来源（EXIF ← 最可信 / 文件名 ← 中等 / 文件属性 ← 最不可信，会标记⚠️）。**按这些信息归类**：优先按时间段（同一天内的归一组），其次看 GPS 地点（换了城市/换了经纬度可能换事件），最后看内容（同一天同一个地点但照片明显不同可以拆）。如果用户说"按每次出门分""优先按地点"，听用户的；',
@@ -1077,7 +1077,7 @@ export function apply(ctx, config = {}) {
     '  ⑥ 某个经历事件如果和已有记录是同一次（qingshi_photo_scan 会给出候选），改用 qingshi_edit 带 imagePaths 追加图片，不要新建重复记录；',
     '  ⑦ 全部处理完，逐组告诉用户结果：成功几条、失败几条、各自的 event_id；',
     '- 手机上传照片前置确认（重要）：如果用户只说"把手机上的照片传上来""手机和电脑同步一下""帮我开个二维码传文件"这类没说要存进青史的话，先不要调工具，先问：「青灵助手可以帮您把手机上的照片上传并整理进青史永存的生涯记录，需要帮您开始吗？」——用户说"要""开始""好"之类的再走流程。但如果用户已经明确说"手机上传照片到青史""用扫码传照片进青史""手机上的照片想传到青史"，那就不要问、直接开流程。',
-    '- 归属谁（必须先问，在开二维码之前）：前置确认通过后、开二维码之前，先主动问：「这些照片要归到你自己的生涯记录里吗？」用户说"是""对""归我" → 默认归属登录用户本人，继续开二维码；用户说"不""归我爸""给我妈存""传到某某那" → 让用户说出要归给谁，然后和上面照片整理同样的逻辑：① 先判断是称谓还是真名；② 称谓 → 调 qingshi_kinship（term 传称谓）反查 uid + 名字；③ 真名 → 调 qingshi_family 拿可管理成员列表模糊匹配；④ 把候选列出来让用户确认；确认后整个手机上传流程都带着 targetUid。**不要调 qingshi_family_all / family_expand / family_layout**，找亲属归属人别用组织管理工具。',
+    '- 归属谁（必须先问，在开二维码之前）：前置确认通过后、开二维码之前，先主动问：「这些照片要归到你自己的生涯记录里吗？」用户说"是""对""归我" → 默认归属登录用户本人，继续开二维码；用户说"不""归我爸""给我妈存""传到某某那" → 让用户说出要归给谁，然后和上面照片整理同样的逻辑：① 先判断是称谓还是真名；② 称谓 → 调 qingshi_kinship（term 传称谓）反查 uid + 名字；③ 真名 → 调 qingshi_manageable_users（keyword 传那个名字）拿可管理成员列表模糊匹配；④ 把候选列出来让用户确认；确认后整个手机上传流程都带着 targetUid。**不要调 qingshi_family（族谱树）、family_all / family_expand / family_layout**——找可管理的人别用组织管理工具。',
     '- 手机上传照片（“手机上传”“用手机传照片”“扫码把相册传上来”）→ 严格按这个顺序：',
     '  ① qingshi_phone_upload_start：生成二维码并打开本机确认窗，让用户用手机扫码选照片；',
     '  ② 用户说“传完了”或手机点了「完成」后，调 qingshi_phone_upload_status（可带 waitSeconds=30~60）；',
@@ -3541,6 +3541,62 @@ export function apply(ctx, config = {}) {
     }
     return { ok: true, stopAt: -1, trail, people }
   }
+
+  ctx.tools.register(
+    defineTool({
+      name: 'qingshi_manageable_users',
+      description:
+        '【我可以管理哪些人】返回当前登录用户**可以管理的全部用户**列表（包含正式账号和虚拟/临时用户），每个人带 uid、名字、性别、生日。' +
+        '当你需要帮**别人**录入生涯时（用户说"归我爸""给我妈存""帮我老板整理"），用这个工具拿到可管理的候选名单，' +
+        '按用户说的名字模糊匹配，确认后把匹配到的 uid 传给 photo_save/record/draft 等工具的 targetUid 参数。' +
+        '注意：这和 qingshi_family（族谱树往上3代往下3代）完全不同——族谱是血缘关系，这个是"我有权管理的人"。',
+      parameters: {
+        keyword: {
+          type: 'string',
+          description: '可选，按名字过滤；不填返回全部',
+        },
+      },
+      output: outputSpec,
+      async execute(args) {
+        const info = await ensureLoggedIn()
+        if (!info.loggedIn) return needLoginText(info)
+        const keyword = String(args?.keyword || '').trim()
+        const listRes = await authed('/get_manageable_tmp_user_list', {})
+        if (listRes.code !== 200) return `查询失败：${listRes.code} ${listRes.message || ''}`
+        const uidList = (listRes.data && listRes.data.list) || []
+        if (!Array.isArray(uidList) || !uidList.length) {
+          return '你目前没有可管理的其他用户，只能归到自己名下。'
+        }
+        // 逐个拿名字（users.get 有 24h 缓存，第二次很快）
+        const lines = [`你可以管理的用户共 ${uidList.length} 人：`]
+        const results = []
+        for (const uid of uidList) {
+          try {
+            const p = await users.get(String(uid))
+            if (!p || (!p.nickname && !p.username)) continue
+            const name = p.nickname || p.username || '未命名'
+            const gender = p.gender === 1 || p.gender === '1' ? '男' : p.gender === 2 || p.gender === '2' ? '女' : ''
+            const birthday = String(p.birthday || '').slice(0, 10)
+            const bit = `${name}（uid: ${uid}${gender ? ' · ' + gender : ''}${birthday ? ' · ' + birthday : ''}）`
+            if (!keyword || name.includes(keyword)) {
+              results.push({ uid, name })
+              lines.push(`  · ${bit}`)
+            }
+          } catch {}
+        }
+        if (keyword && !results.length) {
+          lines.push(`（没有名字包含"${keyword}"的；上面是全部可管理用户）`)
+        }
+        lines.push(
+          '',
+          results.length
+            ? `要归到其中哪位？说名字或直接用 uid。确认后把 targetUid 传给后续工具。`
+            : '上面全部可管理用户，请确认归到哪一位。',
+        )
+        return lines.join(NL)
+      },
+    }),
+  )
 
   ctx.tools.register(
     defineTool({
