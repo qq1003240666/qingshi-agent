@@ -113,6 +113,25 @@ export function createPhoneUpload({ workspaceDir, authed, openWindow, logger }) 
   .ghost { background: rgba(138,109,59,.09); color: #6f5647; border: 1px solid rgba(138,109,59,.16); }
   button:disabled { opacity: .45; cursor: default; }
   .foot { margin-top: 16px; font-size: 12px; color: #a2907c; text-align: center; }
+  /* ===== 分类预览 ===== */
+  .preview-head { margin-top: 28px; padding-top: 20px; border-top: 1px solid rgba(138,109,59,.14); }
+  .preview-title { font-size: 15px; font-weight: 700; color: #6f5647; margin: 0 0 14px; display: flex; align-items: center; gap: 10px; }
+  .preview-title .badge { background: linear-gradient(160deg,#9a5a33,#8a4b2a); color: #fff8ed; font-size: 12px; padding: 2px 10px; border-radius: 999px; }
+  .preview-loading { font-size: 13px; color: #9a8874; text-align: center; padding: 24px; }
+  .preview-event { margin-bottom: 18px; padding: 16px; background: linear-gradient(180deg,#fff8ec,#fdf0da); border: 1px solid rgba(138,109,59,.14); border-radius: 14px; }
+  .preview-event.discard { background: linear-gradient(180deg,#fdf3f3,#fae0e0); border-color: rgba(193,70,70,.22); }
+  .preview-event-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .preview-event-num { width: 24px; height: 24px; border-radius: 50%; background: linear-gradient(160deg,#9a5a33,#8a4b2a); color: #fff8ed; font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; }
+  .preview-event-title { font-size: 15px; font-weight: 700; color: #3b2a1e; }
+  .preview-event-tag { font-size: 11px; padding: 1px 8px; border-radius: 999px; background: rgba(138,109,59,.12); color: #6f5647; }
+  .preview-event-date { font-size: 12px; color: #8a7560; }
+  .preview-event-basis { margin-top: 6px; font-size: 12px; color: #9a8874; line-height: 1.6; }
+  .preview-event-files { margin-top: 10px; display: grid; grid-template-columns: repeat(auto-fill,minmax(110px,1fr)); gap: 8px; }
+  .preview-file { aspect-ratio: 1; border-radius: 8px; overflow: hidden; background: #efe3cf; position: relative; cursor: zoom-in; }
+  .preview-file img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .preview-file .fnum { position: absolute; top: 3px; left: 3px; background: rgba(0,0,0,.55); color: #fff; font-size: 10px; padding: 1px 6px; border-radius: 999px; }
+  .preview-file .fname { position: absolute; bottom: 0; left: 0; right: 0; background: rgba(0,0,0,.6); color: #fff; font-size: 10px; padding: 2px 5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .preview-event-ai { margin-top: 8px; padding: 8px 10px; background: rgba(138,109,59,.05); border-radius: 8px; font-size: 12px; color: #7d6a58; line-height: 1.6; }
 </style></head>
 <body><div class="wrap"><div class="card">
   <div class="head"><div class="seal">青史</div><div><h1>手机正在上传照片</h1>
@@ -129,6 +148,7 @@ export function createPhoneUpload({ workspaceDir, authed, openWindow, logger }) 
     </div>
   </div>
   <div id="list" class="empty">还没有收到照片</div>
+  <div id="previewSection" class="preview-head" style="display:none;"></div>
   <div class="actions">
     <button class="ghost" id="cancelBtn">取消本次上传</button>
     <button class="primary" id="finishBtn" disabled>我已传完</button>
@@ -229,6 +249,114 @@ document.getElementById('list').addEventListener('click', (event) => {
 lightbox.addEventListener('click', closeLightbox);
 document.addEventListener('keydown', (event) => { if (event.key === 'Escape') closeLightbox(); });
 poll(); setInterval(poll, 2000);
+// preview 轮询：只有 status 到 completed 才开始（上传完了 AI 才会分类）
+let previewStarted = false;
+let previewPollTimer = null;
+let lastPreviewKey = '';
+async function pollPreview() {
+  try {
+    const r = await fetch('/api/preview');
+    const j = await r.json();
+    if (!j.ok) return;
+    renderPreview(j.data || {});
+  } catch (e) {}
+}
+function renderPreview(data) {
+  const section = document.getElementById('previewSection');
+  if (!section) return;
+  const events = data.planned_events || [];
+  const hasPreview = data.has_preview === true;
+  // 状态判断
+  const statusEl = document.getElementById('statusText');
+  const curStatus = statusEl ? statusEl.textContent : '';
+  // 还没传完 → 完全不显示 preview 区
+  if (!previewStarted) {
+    if (curStatus === '已传完' || curStatus === '电脑整理中' || curStatus === '已归档') {
+      previewStarted = true;
+      section.style.display = 'block';
+    } else {
+      section.style.display = 'none';
+      return;
+    }
+  }
+  section.style.display = 'block';
+  if (!hasPreview || !events.length) {
+    section.innerHTML = '<div class="preview-title"><span class="badge">AI</span> 正在分类...</div><div class="preview-loading">AI 正在根据照片的拍摄时间和地点归类，稍后这里会显示完整分类结果</div>';
+    return;
+  }
+  // 去重：只有 events 集合真的变了才重建 DOM（避免签名 URL 刷新导致图片闪）
+  const key = events.map(e => (e.title || '') + '|' + (e.file_keys || []).join(',')).join('||');
+  if (key === lastPreviewKey && section.dataset.rendered === '1') return;
+  lastPreviewKey = key;
+  section.dataset.rendered = '1';
+
+  const htmlParts = [];
+  htmlParts.push('<div class="preview-title"><span class="badge">' + events.length + '</span> 归类好 ' + events.filter(e => !e.discard).length + ' 段经历' + (events.some(e => e.discard) ? ' · 🗑️ ' + events.filter(e => e.discard).length + ' 张归入废弃' : '') + '</div>');
+  const normalEvents = events.filter(e => !e.discard);
+  const discardEvents = events.filter(e => e.discard);
+  let idx = 0;
+  for (const ev of normalEvents) {
+    idx++;
+    const fileKeys = ev.file_keys || [];
+    const photos = ev.photos || [];
+    const photosByKey = {};
+    for (const p of photos) if (p.file_key) photosByKey[p.file_key] = p;
+    htmlParts.push('<div class="preview-event">');
+    htmlParts.push('<div class="preview-event-head">');
+    htmlParts.push('<span class="preview-event-num">' + idx + '</span>');
+    htmlParts.push('<span class="preview-event-title">' + (ev.title || '未命名经历') + '</span>');
+    if (ev.eventTag) htmlParts.push('<span class="preview-event-tag">#' + ev.eventTag + '</span>');
+    if (ev.startDate) htmlParts.push('<span class="preview-event-date">📅 ' + ev.startDate + '</span>');
+    if (ev.merge_to_event_id) htmlParts.push('<span class="preview-event-tag">🔗 合并到已有事件</span>');
+    htmlParts.push('</div>');
+    if (ev.classification_basis) htmlParts.push('<div class="preview-event-basis">📎 归类依据：' + ev.classification_basis + '</div>');
+    if (ev.content) htmlParts.push('<div class="preview-event-ai">✍️ ' + ev.content + '</div>');
+    if (fileKeys.length) {
+      htmlParts.push('<div class="preview-event-files">');
+      for (let i = 0; i < fileKeys.length; i++) {
+        const fk = fileKeys[i];
+        const photo = photosByKey[fk] || {};
+        const imgSrc = photo.signed_url || '';
+        const fname = photo.file_name || ('图片 ' + (i + 1));
+        htmlParts.push('<div class="preview-file" title="' + fname + '">');
+        if (imgSrc) htmlParts.push('<img src="' + imgSrc + '" loading="lazy" />');
+        htmlParts.push('<span class="fnum">#' + (i + 1) + '</span>');
+        htmlParts.push('<span class="fname">' + fname + (photo.ai_analysis ? ' · ' + photo.ai_analysis : '') + '</span>');
+        htmlParts.push('</div>');
+      }
+      htmlParts.push('</div>');
+    }
+    htmlParts.push('</div>');
+  }
+  if (discardEvents.length) {
+    const discardFiles = discardEvents.flatMap(e => e.file_keys || []);
+    const discardPhotos = discardEvents.flatMap(e => e.photos || []);
+    htmlParts.push('<div class="preview-event discard">');
+    htmlParts.push('<div class="preview-event-head"><span class="preview-event-num" style="background:linear-gradient(160deg,#c14646,#8a2a2a)">🗑️</span>');
+    htmlParts.push('<span class="preview-event-title">归入废弃的 ' + discardFiles.length + ' 张照片</span>');
+    htmlParts.push('</div>');
+    htmlParts.push('<div class="preview-event-basis">📎 AI 判断为重复、模糊或无关，默认不录入青史</div>');
+    if (discardFiles.length) {
+      htmlParts.push('<div class="preview-event-files">');
+      const dpByKey = {};
+      for (const p of discardPhotos) if (p.file_key) dpByKey[p.file_key] = p;
+      for (let i = 0; i < discardFiles.length; i++) {
+        const photo = dpByKey[discardFiles[i]] || {};
+        const fname = photo.file_name || ('图片 ' + (i + 1));
+        htmlParts.push('<div class="preview-file" title="' + fname + '">');
+        if (photo.signed_url) htmlParts.push('<img src="' + photo.signed_url + '" loading="lazy" />');
+        htmlParts.push('<span class="fnum">#' + (i + 1) + '</span>');
+        htmlParts.push('<span class="fname">' + fname + '</span>');
+        htmlParts.push('</div>');
+      }
+      htmlParts.push('</div>');
+    }
+    htmlParts.push('</div>');
+  }
+  section.innerHTML = htmlParts.join('');
+}
+// 每 3 秒轮询 preview（只在 previewStarted=true 时才真发请求）
+setInterval(() => { if (previewStarted) pollPreview(); }, 3000);
 </script></body></html>`
   }
 
@@ -255,6 +383,13 @@ poll(); setInterval(poll, 2000);
           if (['done', 'canceled', 'expired'].includes(String(data.status || ''))) {
             if (!timer) timer = setTimeout(() => server.close(), 60000).unref?.()
           }
+          return send(200, { ok: true, data })
+        }
+        if (req.method === 'GET' && url.pathname === '/api/preview') {
+          // 代理到后端 preview_read，让电脑窗口也能看到 AI 分类结果
+          const result = await authed('/phone_upload/preview_read', { session_id: sessionId })
+          if (result.code !== 200) return send(200, { ok: false, message: result.message || '读取失败' })
+          const data = result.data || {}
           return send(200, { ok: true, data })
         }
         if (req.method === 'POST' && url.pathname === '/api/finish') {
